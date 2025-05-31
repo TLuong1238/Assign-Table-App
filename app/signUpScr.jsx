@@ -81,6 +81,7 @@ const SignUpScr = () => {
         options: {
           data: {
             name: name,
+            email: email
           }
         }
       });

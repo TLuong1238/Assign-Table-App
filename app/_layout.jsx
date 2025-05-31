@@ -5,7 +5,10 @@ import { Stack, useRouter } from 'expo-router'
 import { getUserData } from '../services/userService'
 import { LogBox, StatusBar, View } from 'react-native'
 import MyLoading from '../components/MyLoading'
-// Bỏ qua một số warnings không cần thiết
+// import cronService from '../services/cronService'
+
+
+
 LogBox.ignoreLogs([
   'Warning: TNodeChildrenRenderer',
   'Warning: MemoizedTNodeRenderer',
@@ -26,6 +29,10 @@ const MainLayout = () => {
 
   // 
   useEffect(() => {
+    // cron service
+    // cronService.startAll();
+
+
     const checkSession = async () => {
       setLoading(true);
       try {
@@ -66,6 +73,8 @@ const MainLayout = () => {
 
     return () => {
       data?.subscription?.unsubscribe();
+      // clean cron
+      // cronService.stopAll();
     };
   }, []);
 

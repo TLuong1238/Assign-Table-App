@@ -246,7 +246,7 @@ const PostDetailsScr = () => {
                     {
                         post?.comments?.length === 0 && (
                             <View style={{
-                                color: theme.colors.textLight, marginTop: hp(6), alignItems: 'center', justifyContent: 'center',backgroundColor: 'white'
+                                color: theme.colors.textLight, marginTop: hp(6), alignItems: 'center', justifyContent: 'center',backgroundColor: '#FFBF00'
                             }}>
                                 <Icon.MessageCircle stroke={theme.colors.textLight} height={hp(5)} width={hp(5)} />
                                 <Text style={styles.notFound}>Hãy tạo bình luận đầu tiên!</Text>

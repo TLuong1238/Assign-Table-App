@@ -1,6 +1,5 @@
 import { supabase } from "../lib/supabase";
 
-// Hàm tạo đặt bàn
 export const createBill = async (bill) => {
     try {
         console.log('createBill input:', bill);
@@ -47,9 +46,8 @@ export const fetchBillByTimeRange = async (time) => {
     try {
         const targetDateTime = new Date(time);
 
-        // Tạo khoảng ±2 giờ
-        const startTime = new Date(targetDateTime.getTime() - 2 * 60 * 60 * 1000);
-        const endTime = new Date(targetDateTime.getTime() + 2 * 60 * 60 * 1000);
+        const startTime = new Date(targetDateTime.getTime() -  15 * 60 * 1000);
+        const endTime = new Date(targetDateTime.getTime() +  15 * 60 * 1000);
 
         const { data, error } = await supabase
             .from('bills')
@@ -93,15 +91,11 @@ export const createDetail = async (billId, tableIds, peopleCount) => {
         let remainingPeople = peopleCount;
         let tableIndex = 0;
 
-        // Phân bổ người cho từng bàn
         while (remainingPeople > 0 && tableIndex < tableIds.length) {
             const currentTableId = tableIds[tableIndex];
 
-            // Tính số người cho bàn hiện tại (tối đa 6 người/bàn)
             const peopleForThisTable = Math.min(remainingPeople, 6);
 
-            // Tạo số detail tương ứng với số người (mỗi detail = 1 người hoặc tối đa 6 người)
-            // Nếu bảng detailBills chỉ có id, billId, tableId thì mỗi detail đại diện cho 1 "slot" 6 người
             const detailsNeeded = Math.ceil(peopleForThisTable / 6);
 
             for (let i = 0; i < detailsNeeded; i++) {
@@ -164,5 +158,82 @@ export const updateBill = async (billId, updateData) => {
   } catch (error) {
     console.log('updateBill error: ', error);
     return { success: false, msg: 'Có lỗi xảy ra khi cập nhật bill' };
+  }
+};
+//updateBills expired
+export const updateExpiredBills = async () => {
+  try {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    
+    console.log('Checking for expired bills before:', today.toISOString());
+
+    const { data: expiredBills, error: fetchError } = await supabase
+      .from('bills')
+      .select('*')
+      .eq('state', 'in_order')
+      .lt('time', today.toISOString());
+
+    if (fetchError) {
+      console.error('Error fetching expired bills:', fetchError);
+      return { success: false, msg: fetchError.message };
+    }
+
+    if (!expiredBills || expiredBills.length === 0) {
+      console.log('No expired bills found');
+      return { success: true, data: [] };
+    }
+
+    console.log(`Found ${expiredBills.length} expired bills:`, expiredBills);
+
+    const billIds = expiredBills.map(bill => bill.id);
+    
+    const { data: updatedBills, error: updateError } = await supabase
+      .from('bills')
+      .update({
+        state: 'cancelled',
+        visit: 'not_visited',
+        updated_at: new Date().toISOString()
+      })
+      .in('id', billIds)
+      .select();
+
+    if (updateError) {
+      console.error('Error updating expired bills:', updateError);
+      return { success: false, msg: updateError.message };
+    }
+
+    console.log(`Successfully updated ${updatedBills.length} expired bills`);
+    
+    return { 
+      success: true, 
+      data: updatedBills,
+      count: updatedBills.length 
+    };
+
+  } catch (error) {
+    console.error('Error in updateExpiredBills:', error);
+    return { success: false, msg: error.message };
+  }
+};
+
+export const checkAndUpdateExpiredBills = async () => {
+  try {
+    console.log('=== STARTING EXPIRED BILLS CHECK ===');
+    
+    const result = await updateExpiredBills();
+    
+    if (result.success && result.count > 0) {
+      console.log(`✅ Auto-cancelled ${result.count} expired bills`);
+      
+      // Alert.alert('Thông báo', `Đã tự động hủy ${result.count} đơn đặt bàn quá hạn`);
+    }
+    
+    console.log('=== EXPIRED BILLS CHECK COMPLETED ===');
+    return result;
+    
+  } catch (error) {
+    console.error('Error in checkAndUpdateExpiredBills:', error);
+    return { success: false, msg: error.message };
   }
 };
