@@ -1,39 +1,181 @@
-import { View, Text, StyleSheet, FlatList, Alert, TouchableOpacity } from 'react-native';
-import React, { useState, useEffect } from 'react';
-import { fetchBillByUser, fetchDetailByBillIds, updateBill } from '../../../services/billService';
-import { fetchTable, updateTableState } from '../../../services/tableService';
+import React, { memo, useCallback, useState, useEffect, useRef } from 'react';
+import { View,Text,FlatList,TouchableOpacity,Alert,StyleSheet,AppState,RefreshControl} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../../context/AuthContext';
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import MyHeader from '../../../components/MyHeader';
 import { hp, wp } from '../../../helper/common';
 import { theme } from '../../../constants/theme';
-import { useAuth } from '../../../context/AuthContext';
-// Sửa import ở đầu file (dòng 7)
 import * as Icon from 'react-native-feather';
+import { 
+  getStatusColor, 
+  getStatusText, 
+  getBillStatus, 
+  BILL_STATUS 
+} from '../../../helper/billStatus';
+import { 
+  fetchBillByUser, 
+  fetchDetailByBillIds, 
+  updateBill 
+} from '../../../services/billService';
+import { 
+  fetchTable, 
+  updateTableState 
+} from '../../../services/tableService';
+
+// ✅ Constants
+const REFRESH_INTERVAL = 60 * 1000; // 30 seconds
+const OVERDUE_THRESHOLD = 20; // 20 minutes
+const AUTO_COMPLETE_DELAY = 60 * 60 * 1000; // 1 hour
+const MAX_RENDER_BATCH = 10;
+const WINDOW_SIZE = 10;
+
+// ✅ Time calculation utility
+const calculateTimeStatus = (bookingTime) => {
+  const now = new Date();
+  const timeDiff = new Date(bookingTime).getTime() - now.getTime();
+  const minutesDiff = timeDiff / (1000 * 60);
+
+  if (minutesDiff > 10) {
+    const hours = Math.floor(minutesDiff / 60);
+    const minutes = Math.floor(minutesDiff % 60);
+    return {
+      text: `Còn ${hours > 0 ? `${hours}h ` : ''}${minutes}p mới đến giờ`,
+      color: '#f39c12',
+      status: 'waiting',
+      canArrive: false
+    };
+  }
+  
+  if (minutesDiff > 0) {
+    return {
+      text: `Còn ${Math.floor(minutesDiff)}p nữa`,
+      color: '#2ed573',
+      status: 'can_arrive',
+      canArrive: true
+    };
+  }
+  
+  if (minutesDiff > -15) {
+    const overdueMinutes = Math.abs(Math.floor(minutesDiff));
+    return {
+      text: `Đã quá giờ ${overdueMinutes}p`,
+      color: '#e74c3c',
+      status: 'overdue',
+      canArrive: true
+    };
+  }
+  
+  return {
+    text: "Đơn sẽ bị hủy tự động",
+    color: '#95a5a6',
+    status: 'expired',
+    canArrive: false
+  };
+};
+
+// ✅ Optimized Countdown Timer Component
+const CountdownTimer = memo(({ startTime }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+  const intervalRef = useRef(null);
+
+  const calculateTimeLeft = useCallback(() => {
+    const now = new Date();
+    const start = new Date(startTime);
+    const endTime = new Date(start.getTime() + AUTO_COMPLETE_DELAY);
+    const diff = endTime - now;
+
+    if (diff <= 0) {
+      setTimeLeft('Đã hết thời gian');
+      return false;
+    }
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    setTimeLeft(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+    return true;
+  }, [startTime]);
+
+  useEffect(() => {
+    calculateTimeLeft();
+    intervalRef.current = setInterval(() => {
+      if (!calculateTimeLeft()) {
+        clearInterval(intervalRef.current);
+      }
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [calculateTimeLeft]);
+
+  return (
+    <Text style={styles.countdownText}>
+      Thời gian còn lại: {timeLeft}
+    </Text>
+  );
+});
+
+CountdownTimer.displayName = 'CountdownTimer';
+
+// ✅ Optimized Bill Info Row Component
+const BillInfoRow = memo(({ 
+  icon, 
+  text, 
+  iconColor = theme.colors.textLight, 
+  textStyle = {} 
+}) => (
+  <View style={styles.infoRow}>
+    {React.createElement(Icon[icon], { 
+      width: 16, 
+      height: 16, 
+      color: iconColor 
+    })}
+    <Text style={[styles.infoText, textStyle]}>{text}</Text>
+  </View>
+));
+
+BillInfoRow.displayName = 'BillInfoRow';
+
+// ✅ Optimized Tables Section Component
+const TablesSection = memo(({ details, getTableName }) => {
+  const tableIds = [...new Set(details.map(detail => detail.tableId))];
+  
+  return (
+    <View style={styles.tablesSection}>
+      <Text style={styles.tablesTitle}>Bàn đã đặt:</Text>
+      <View style={styles.tablesContainer}>
+        {tableIds.map(tableId => (
+          <View key={tableId} style={styles.tableChip}>
+            <Text style={styles.tableText}>{getTableName(tableId)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+TablesSection.displayName = 'TablesSection';
+
+// ✅ Main Component
 const HistoryScr = () => {
   const { user } = useAuth();
   const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [tables, setTables] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Refs for cleanup
+  const overdueIntervalRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+  const autoCompleteTimeoutsRef = useRef(new Map());
 
-  useEffect(() => {
-    if (user) {
-      fetchUserBills();
-      fetchTableData();
-
-      // ✅ Set interval để check overdue bills mỗi phút
-      const overdueInterval = setInterval(() => {
-        checkAndUpdateOverdueBills();
-      }, 60 * 1000); // Check mỗi phút
-
-      // Cleanup interval
-      return () => {
-        clearInterval(overdueInterval);
-      };
-    }
-  }, [user]);
-
-  // Fetch table data để hiển thị tên bàn
-  const fetchTableData = async () => {
+  // ✅ Memoized table data fetcher
+  const fetchTableData = useCallback(async () => {
     try {
       const tableRes = await fetchTable();
       if (tableRes.success) {
@@ -42,21 +184,21 @@ const HistoryScr = () => {
     } catch (error) {
       console.error('Error fetching tables:', error);
     }
-  };
+  }, []);
 
-  // Fetch bills của user hiện tại
-  const fetchUserBills = async () => {
-    setLoading(true);
+  // ✅ Memoized bills fetcher with error handling
+  const fetchUserBills = useCallback(async (showLoading = true) => {
+    if (!user?.id) return;
+    
+    if (showLoading) setLoading(true);
     try {
       const billRes = await fetchBillByUser(user.id);
 
       if (billRes.success && billRes.data.length > 0) {
-        // Sort bills theo thời gian tạo (mới nhất trước)
         const sortedBills = billRes.data.sort((a, b) =>
           new Date(b.created_at) - new Date(a.created_at)
         );
 
-        // Fetch details cho mỗi bill
         const billIds = sortedBills.map(bill => bill.id);
         const detailRes = await fetchDetailByBillIds(billIds);
 
@@ -74,70 +216,67 @@ const HistoryScr = () => {
       }
     } catch (error) {
       console.error('Error fetching user bills:', error);
-      Alert.alert('Lỗi', 'Không thể lấy dữ liệu đơn đặt bàn');
+      if (showLoading) {
+        Alert.alert('Lỗi', 'Không thể lấy dữ liệu đơn đặt bàn');
+      }
+    } finally {
+      if (showLoading) setLoading(false);
+      setRefreshing(false);
     }
-    setLoading(false);
-  };
+  }, [user?.id]);
 
-  // Get table name từ tableId
-  const getTableName = (tableId) => {
-    const table = tables.find(t => t.id === tableId);
-    return table ? `Bàn ${table.id} (Tầng ${table.floor})` : `Bàn ${tableId}`;
-  };
+  // ✅ Optimized overdue bills checker
+  const checkAndUpdateOverdueBills = useCallback(async () => {
+    if (!bills.length || !user?.id) return;
 
-  // ✅ Function check và update bills quá giờ
-  const checkAndUpdateOverdueBills = async () => {
     try {
       const now = new Date();
-
-      // Tìm bills quá giờ mà chưa check-in
       const overdueBills = bills.filter(bill => {
-        const bookingTime = new Date(bill.time);
-        const timeDiff = now.getTime() - bookingTime.getTime();
-        const minutesDiff = timeDiff / (1000 * 60);
-
-        return (
-          bill.state === 'in_order' &&
-          bill.visit === 'on_process' && // ✅ Sửa thành on_process
-          minutesDiff > 20 // Quá giờ 20 phút
-        );
+        const minutesDiff = (now - new Date(bill.time)) / (1000 * 60);
+        return bill.state === 'in_order' && 
+               bill.visit === 'on_process' && 
+               minutesDiff > OVERDUE_THRESHOLD;
       });
 
-      if (overdueBills.length > 0) {
-        console.log(`Found ${overdueBills.length} overdue bills, updating to unvisited...`);
+      if (overdueBills.length === 0) return;
 
-        // Update từng bill quá giờ
-        for (const bill of overdueBills) {
+      console.log(`Processing ${overdueBills.length} overdue bills`);
+
+      // Batch update for better performance
+      const updatePromises = overdueBills.map(async (bill) => {
+        try {
           const updateRes = await updateBill(bill.id, {
-            visit: 'unvisited', // ✅ Set thành unvisited
-            state: 'cancelled'   // Cancel bill quá giờ
+            visit: 'unvisited',
+            state: 'cancelled'
           });
 
-          if (updateRes.success) {
-            // ✅ Giải phóng bàn khi quá giờ
-            if (bill.details && bill.details.length > 0) {
-              const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
-
-              for (const tableId of tableIds) {
-                await updateTableState(tableId, 'empty');
-                console.log(`Table ${tableId} set to empty (overdue)`);
-              }
-            }
-
-            console.log(`Updated overdue bill ${bill.id} to unvisited`);
+          if (updateRes.success && bill.details?.length > 0) {
+            const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
+            await Promise.all(
+              tableIds.map(tableId => updateTableState(tableId, 'empty'))
+            );
           }
+          return { success: true, billId: bill.id };
+        } catch (error) {
+          console.error(`Error updating bill ${bill.id}:`, error);
+          return { success: false, billId: bill.id };
         }
+      });
 
-        // Refresh data để cập nhật UI
-        fetchUserBills();
+      const results = await Promise.allSettled(updatePromises);
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      
+      if (successCount > 0) {
+        await fetchUserBills(false); // Silent refresh
       }
-    } catch (error) {
-      console.error('Error checking overdue bills:', error);
-    }
-  };
 
-  // ✅ Xử lý hủy đơn
-  const handleCancelBill = async (bill) => {
+    } catch (error) {
+      console.error('Error in overdue check:', error);
+    }
+  }, [bills, user?.id, fetchUserBills]);
+
+  // ✅ Optimized bill cancellation
+  const handleCancelBill = useCallback((bill) => {
     Alert.alert(
       "Xác nhận hủy đơn",
       "Bạn có chắc chắn muốn hủy đơn này không?",
@@ -149,41 +288,42 @@ const HistoryScr = () => {
           onPress: async () => {
             setLoading(true);
             try {
-              // Update bill status
-              const updateRes = await updateBill(bill.id, {
-                state: 'cancelled',
-                // ✅ Giữ nguyên visit = 'on_process' khi user tự hủy
-              });
+              const updateRes = await updateBill(bill.id, { state: 'cancelled' });
 
               if (updateRes.success) {
-                // ✅ Giải phóng bàn khi user hủy đơn
-                if (bill.details && bill.details.length > 0) {
-                  const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
+                // Clear auto-complete timeout if exists
+                if (autoCompleteTimeoutsRef.current.has(bill.id)) {
+                  clearTimeout(autoCompleteTimeoutsRef.current.get(bill.id));
+                  autoCompleteTimeoutsRef.current.delete(bill.id);
+                }
 
-                  for (const tableId of tableIds) {
-                    await updateTableState(tableId, 'empty');
-                    console.log(`Table ${tableId} set to empty (user cancelled)`);
-                  }
+                // Free tables
+                if (bill.details?.length > 0) {
+                  const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
+                  await Promise.all(
+                    tableIds.map(tableId => updateTableState(tableId, 'empty'))
+                  );
                 }
 
                 Alert.alert("Thành công", "Đã hủy đơn thành công");
-                fetchUserBills(); // Refresh data
+                await fetchUserBills(false);
               } else {
                 Alert.alert("Lỗi", updateRes.msg || "Không thể hủy đơn");
               }
             } catch (error) {
               console.error('Error cancelling bill:', error);
               Alert.alert("Lỗi", "Có lỗi xảy ra khi hủy đơn");
+            } finally {
+              setLoading(false);
             }
-            setLoading(false);
           }
         }
       ]
     );
-  };
+  }, [fetchUserBills]);
 
-  // ✅ Xử lý khi khách hàng đã đến
-  const handleArrived = async (bill) => {
+  // ✅ Optimized arrival handler with auto-complete scheduling
+  const handleArrived = useCallback((bill) => {
     Alert.alert(
       "Xác nhận đã đến",
       "Xác nhận bạn đã đến nhà hàng?",
@@ -194,240 +334,122 @@ const HistoryScr = () => {
           onPress: async () => {
             setLoading(true);
             try {
-              // Update visit status
-              const updateRes = await updateBill(bill.id, {
-                visit: 'on_process', // ✅ Set visit thành on_process
-              });
+              const updateRes = await updateBill(bill.id, { visit: 'visited' });
 
               if (updateRes.success) {
-                // ✅ Set bàn thành occupied khi khách check-in
-                if (bill.details && bill.details.length > 0) {
+                // Update table states
+                if (bill.details?.length > 0) {
                   const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
-
-                  for (const tableId of tableIds) {
-                    await updateTableState(tableId, 'occupied');
-                    console.log(`Table ${tableId} set to occupied (customer arrived)`);
-                  }
+                  await Promise.all(
+                    tableIds.map(tableId => updateTableState(tableId, 'occupied'))
+                  );
                 }
 
                 Alert.alert("Thành công", "Chúc bạn có bữa ăn ngon miệng!");
 
-                // ✅ Set timeout để tự động giải phóng bàn sau 1 giờ
-                setTimeout(async () => {
+                // Schedule auto-complete
+                const timeoutId = setTimeout(async () => {
                   try {
-                    if (bill.details && bill.details.length > 0) {
+                    if (bill.details?.length > 0) {
                       const tableIds = [...new Set(bill.details.map(detail => detail.tableId))];
-
-                      // Giải phóng tất cả bàn
-                      for (const tableId of tableIds) {
-                        await updateTableState(tableId, 'empty');
-                        console.log(`Table ${tableId} set to empty (1 hour completed)`);
-                      }
-
-                      // Update bill status thành completed
-                      await updateBill(bill.id, {
-                        state: 'completed',
-                      });
-
-
-                      // Optional: Refresh bills để cập nhật UI
-                      fetchUserBills();
+                      await Promise.all([
+                        ...tableIds.map(tableId => updateTableState(tableId, 'empty')),
+                        updateBill(bill.id, { state: 'completed' })
+                      ]);
+                      autoCompleteTimeoutsRef.current.delete(bill.id);
+                      fetchUserBills(false);
                     }
                   } catch (error) {
-                    console.error('Lỗi khi giải phóng bàn sau 1 giờ:', error);
+                    console.error('Error auto-completing bill:', error);
                   }
-                }, 40 * 60 * 1000);
+                }, AUTO_COMPLETE_DELAY);
 
-                fetchUserBills(); // Refresh để hiển thị trạng thái mới
+                autoCompleteTimeoutsRef.current.set(bill.id, timeoutId);
+                await fetchUserBills(false);
               } else {
                 Alert.alert("Lỗi", updateRes.msg || "Không thể cập nhật trạng thái");
               }
             } catch (error) {
               console.error('Error updating arrival status:', error);
               Alert.alert("Lỗi", "Có lỗi xảy ra khi cập nhật trạng thái");
+            } finally {
+              setLoading(false);
             }
-            setLoading(false);
           }
         }
       ]
     );
-  };
+  }, [fetchUserBills]);
 
-  // Get màu sắc theo trạng thái
-  const getStatusColor = (state) => {
-    switch (state) {
-      case 'in_order': return theme.colors.primary;
-      case 'completed': return '#2ed573';
-      case 'cancelled': return '#ff4757';
-      default: return theme.colors.textLight;
-    }
-  };
+  // ✅ Memoized table name getter
+  const getTableName = useCallback((tableId) => {
+    const table = tables.find(t => t.id === tableId);
+    return table ? `Bàn ${table.id} (Tầng ${table.floor})` : `Bàn ${tableId}`;
+  }, [tables]);
 
-  // Get text hiển thị theo trạng thái
-  const getStatusText = (state) => {
-    switch (state) {
-      case 'in_order': return 'Đang đặt';
-      case 'completed': return 'Hoàn thành';
-      case 'cancelled': return 'Đã hủy';
-      default: return state;
-    }
-  };
+  // ✅ Memoized refresh handler
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchUserBills(false);
+  }, [fetchUserBills]);
 
-  // ✅ Component hiển thị countdown timer cho khách đã check-in
-  const CountdownTimer = ({ startTime }) => {
-    const [timeLeft, setTimeLeft] = useState('');
-
-    useEffect(() => {
-      const interval = setInterval(() => {
-        const now = new Date();
-        const visitTime = new Date(startTime);
-        const endTime = new Date(visitTime.getTime() + 60 * 60 * 1000); // +1 hour
-        const diff = endTime.getTime() - now.getTime();
-
-        if (diff <= 0) {
-          setTimeLeft('Hết thời gian');
-          clearInterval(interval);
-        } else {
-          const hours = Math.floor(diff / (1000 * 60 * 60));
-          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-          setTimeLeft(`${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }, [startTime]);
-
-    return (
-      <Text style={styles.countdownText}>
-        Thời gian còn lại: {timeLeft}
-      </Text>
-    );
-  };
-
-  // Render mỗi bill item
-  const renderBillItem = ({ item, index }) => {
-    // ✅ Get thông tin thời gian với logic overdue
-    const getTimeStatus = () => {
-      const now = new Date();
-      const bookingTime = new Date(item.time);
-      const timeDiff = bookingTime.getTime() - now.getTime();
-      const minutesDiff = timeDiff / (1000 * 60);
-
-      if (minutesDiff > 10) {
-        const hours = Math.floor(minutesDiff / 60);
-        const minutes = Math.floor(minutesDiff % 60);
-        return {
-          text: `Còn ${hours > 0 ? `${hours}h ` : ''}${minutes}p mới đến giờ`,
-          color: 'orange',
-          status: 'waiting'
-        };
-      } else if (minutesDiff > 0) {
-        return {
-          text: `Còn ${Math.floor(minutesDiff)}p nữa`,
-          color: 'green',
-          status: 'can_arrive'
-        };
-      } else if (minutesDiff > -20) { // ✅ Trong vòng 20 phút sau giờ đặt
-        const overdueMinutes = Math.abs(Math.floor(minutesDiff));
-        return {
-          text: `Đã quá giờ ${overdueMinutes}p`,
-          color: 'red',
-          status: 'overdue'
-        };
-      } else {
-        return {
-          text: "Đơn của bạn đã bị hủy do quá thời gian",
-          color: '#666',
-          status: 'expired'
-        };
-      }
-    };
-
-    const timeStatus = getTimeStatus();
+  // ✅ Optimized render bill item
+  const renderBillItem = useCallback(({ item, index }) => {
+    const billStatus = getBillStatus(item.state, item.visit);
+    const timeStatus = calculateTimeStatus(item.time);
 
     return (
       <View style={styles.billCard}>
-        {/* Header với ID và status */}
+        {/* Header */}
         <View style={styles.billHeader}>
           <View style={styles.billHeaderLeft}>
             <Text style={styles.billId}>Đơn #{bills.length - index}</Text>
-            {/* ✅ THÊM - Hiển thị giá tiền ngay dưới ID */}
             <Text style={styles.billPrice}>
               {item.price ? `${item.price.toLocaleString('vi-VN')}đ` : 'Miễn phí'}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.state) }]}>
-            <Text style={styles.statusText}>{getStatusText(item.state)}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.state, item.visit) }]}>
+            <Text style={styles.statusText}>{getStatusText(item.state, item.visit)}</Text>
           </View>
         </View>
 
-        {/* Thông tin chi tiết */}
+        {/* Bill Info */}
         <View style={styles.billInfo}>
-          <View style={styles.infoRow}>
-            <Icon.User width={16} height={16} color={theme.colors.textLight} />
-            <Text style={styles.infoText}>{item.name}</Text>
-          </View>
+          <BillInfoRow icon="User" text={item.name} />
+          <BillInfoRow icon="Phone" text={item.phone} />
+          <BillInfoRow icon="Users" text={`${item.num_people} người`} />
+          <BillInfoRow 
+            icon="Clock" 
+            text={new Date(item.time).toLocaleString('vi-VN')} 
+          />
+          <BillInfoRow 
+            icon="DollarSign" 
+            text={item.price ? `${item.price.toLocaleString('vi-VN')}đ` : 'Chưa có món ăn'}
+            iconColor={theme.colors.primary}
+            textStyle={styles.priceText}
+          />
 
-          <View style={styles.infoRow}>
-            <Icon.Phone width={16} height={16} color={theme.colors.textLight} />
-            <Text style={styles.infoText}>{item.phone}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Icon.Users width={16} height={16} color={theme.colors.textLight} />
-            <Text style={styles.infoText}>{item.num_people} người</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Icon.Clock width={16} height={16} color={theme.colors.textLight} />
-            <Text style={styles.infoText}>
-              {new Date(item.time).toLocaleString('vi-VN')}
-            </Text>
-          </View>
-          {/* ✅ THÊM DÒNG NÀY - Hiển thị giá tiền */}
-          <View style={styles.infoRow}>
-            <Icon.DollarSign width={16} height={16} color={theme.colors.primary} />
-            <Text style={[styles.infoText, styles.priceText]}>
-              {item.price ? `${item.price.toLocaleString('vi-VN')}đ` : 'Chưa có món ăn'}
-            </Text>
-          </View>
-
-          {/* ✅ Hiển thị thông tin thời gian cho đơn đang chờ */}
-          {item.state === 'in_order' && item.visit === 'on_process' && (
-            <View style={styles.infoRow}>
-              <Icon.Info width={16} height={16} color={timeStatus.color} />
-              <Text style={[styles.infoText, { color: timeStatus.color }]}>
-                {timeStatus.text}
-              </Text>
-            </View>
+          {billStatus === BILL_STATUS.WAITING && (
+            <BillInfoRow 
+              icon="Info" 
+              text={timeStatus.text}
+              iconColor={timeStatus.color}
+              textStyle={{ color: timeStatus.color }}
+            />
           )}
 
-          {/* Note nếu có */}
           {item.note && (
-            <View style={styles.infoRow}>
-              <Icon.FileText width={16} height={16} color={theme.colors.textLight} />
-              <Text style={styles.infoText}>{item.note}</Text>
-            </View>
+            <BillInfoRow icon="FileText" text={item.note} />
           )}
         </View>
 
-        {/* Danh sách bàn đã đặt */}
-        {item.details && item.details.length > 0 && (
-          <View style={styles.tablesSection}>
-            <Text style={styles.tablesTitle}>Bàn đã đặt:</Text>
-            <View style={styles.tablesContainer}>
-              {[...new Set(item.details.map(detail => detail.tableId))].map(tableId => (
-                <View key={tableId} style={styles.tableChip}>
-                  <Text style={styles.tableText}>{getTableName(tableId)}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
+        {/* Tables */}
+        {item.details?.length > 0 && (
+          <TablesSection details={item.details} getTableName={getTableName} />
         )}
 
-        {/* ✅ Action buttons - Cập nhật logic với overdue check */}
-        {item.state === 'in_order' && item.visit === 'on_process' && timeStatus.status !== 'expired' && (
+        {/* Actions */}
+        {billStatus === BILL_STATUS.WAITING && timeStatus.status !== 'expired' && (
           <View style={styles.actionSection}>
             <TouchableOpacity
               style={[styles.actionButton, styles.cancelButton]}
@@ -440,33 +462,26 @@ const HistoryScr = () => {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                (timeStatus.status === 'can_arrive' || timeStatus.status === 'overdue')
-                  ? styles.arrivedButton
-                  : styles.disabledButton
+                timeStatus.canArrive ? styles.arrivedButton : styles.disabledButton
               ]}
-              onPress={(timeStatus.status === 'can_arrive' || timeStatus.status === 'overdue')
-                ? () => handleArrived(item)
-                : null}
-              disabled={!(timeStatus.status === 'can_arrive' || timeStatus.status === 'overdue')}
+              onPress={timeStatus.canArrive ? () => handleArrived(item) : null}
+              disabled={!timeStatus.canArrive}
             >
               <Icon.Check width={16} height={16} color="white" />
               <Text style={styles.actionButtonText}>
-                {(timeStatus.status === 'can_arrive' || timeStatus.status === 'overdue')
-                  ? "Đã đến"
-                  : "Chưa đến giờ"}
+                {timeStatus.canArrive ? "Đã đến" : "Chưa đến giờ"}
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* ✅ Hiển thị thông báo khi đã check-in */}
-        {item.state === 'in_order' && item.visit === 'visited' && (
+        {/* Status Sections */}
+        {billStatus === BILL_STATUS.USING && (
           <View style={styles.visitedSection}>
             <View style={styles.visitedIndicator}>
-              <Icon.CheckCircle width={20} height={20} color="green" />
-              <Text style={styles.visitedText}>Bạn đã check-in thành công</Text>
+              <Icon.CheckCircle width={20} height={20} color="#2ed573" />
+              <Text style={styles.visitedText}>Đang sử dụng bàn</Text>
             </View>
-            {/* ✅ THÊM - Hiển thị tổng chi phí */}
             <Text style={styles.visitedSubText}>
               Tổng chi phí: <Text style={styles.visitedPrice}>{item.price?.toLocaleString('vi-VN') || 0}đ</Text>
             </Text>
@@ -477,11 +492,10 @@ const HistoryScr = () => {
           </View>
         )}
 
-        {/* ✅ Hiển thị thông báo khi user tự hủy đơn */}
-        {item.state === 'cancelled' && item.visit === 'on_process' && (
+        {billStatus === BILL_STATUS.USER_CANCELLED && (
           <View style={styles.cancelledSection}>
             <View style={styles.cancelledIndicator}>
-              <Icon.Slash width={20} height={20} color="#ff6b6b" />
+              <Icon.Slash width={20} height={20} color="#e74c3c" />
               <Text style={styles.cancelledText}>Bạn đã hủy đơn</Text>
             </View>
             <Text style={styles.cancelledSubText}>
@@ -490,27 +504,24 @@ const HistoryScr = () => {
           </View>
         )}
 
-        {/* ✅ Hiển thị thông báo khi visit = 'unvisited' (đến muộn) */}
-        {item.visit === 'unvisited' && (
+        {billStatus === BILL_STATUS.SYSTEM_CANCELLED && (
           <View style={styles.unvisitedSection}>
             <View style={styles.unvisitedIndicator}>
-              <Icon.XCircle width={20} height={20} color="#ff6b6b" />
-              <Text style={styles.unvisitedText}>Không đến đúng giờ</Text>
+              <Icon.AlertTriangle width={20} height={20} color="#f39c12" />
+              <Text style={styles.unvisitedText}>Không hoàn thành</Text>
             </View>
             <Text style={styles.unvisitedSubText}>
-              Bạn đã không đến trong vòng 20 phút. Đơn đã được tự động hủy.
+              Khách hàng không đến đúng giờ, đơn đã được hệ thống hủy tự động.
             </Text>
           </View>
         )}
 
-        {/* ✅ Hiển thị thông báo khi đơn đã hoàn thành */}
-        {item.state === 'completed' && (
+        {billStatus === BILL_STATUS.COMPLETED && (
           <View style={styles.completedSection}>
             <View style={styles.completedIndicator}>
-              <Icon.CheckCircle width={20} height={20} color="#2ed573" />
+              <Icon.CheckCircle width={20} height={20} color="#27ae60" />
               <Text style={styles.completedText}>Đơn đã hoàn thành</Text>
             </View>
-            {/* ✅ THÊM - Hiển thị tổng thanh toán */}
             <Text style={styles.completedSubText}>
               Tổng thanh toán: <Text style={styles.completedPrice}>{item.price?.toLocaleString('vi-VN') || 0}đ</Text>
             </Text>
@@ -521,32 +532,119 @@ const HistoryScr = () => {
         )}
       </View>
     );
-  };
+  }, [bills.length, getTableName, handleCancelBill, handleArrived]);
+
+  // ✅ Memoized empty component
+  const renderEmptyComponent = useCallback(() => (
+    <View style={styles.emptyContainer}>
+      <Icon.Calendar width={50} height={50} color={theme.colors.textLight} />
+      <Text style={styles.emptyText}>Bạn chưa có đơn đặt bàn nào</Text>
+      <Text style={styles.emptySubText}>
+        Hãy đặt bàn để thưởng thức những món ăn ngon!
+      </Text>
+    </View>
+  ), []);
+
+  // ✅ Memoized key extractor
+  const keyExtractor = useCallback((item) => item.id.toString(), []);
+
+  // ✅ App state handler
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App came to foreground - refresh data
+        fetchUserBills(false);
+        checkAndUpdateOverdueBills();
+      }
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [fetchUserBills, checkAndUpdateOverdueBills]);
+
+  // ✅ Focus effect for screen refresh
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) {
+        fetchUserBills(false);
+      }
+    }, [user?.id, fetchUserBills])
+  );
+
+  // ✅ Initial data loading
+  useEffect(() => {
+    if (user?.id) {
+      fetchUserBills();
+      fetchTableData();
+    }
+  }, [user?.id, fetchUserBills, fetchTableData]);
+
+  // ✅ Overdue check interval
+  useEffect(() => {
+    if (!user?.id) return;
+
+    overdueIntervalRef.current = setInterval(checkAndUpdateOverdueBills, REFRESH_INTERVAL);
+    
+    return () => {
+      if (overdueIntervalRef.current) {
+        clearInterval(overdueIntervalRef.current);
+      }
+    };
+  }, [user?.id, checkAndUpdateOverdueBills]);
+
+  // ✅ Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all timeouts
+      autoCompleteTimeoutsRef.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      autoCompleteTimeoutsRef.current.clear();
+
+      // Clear interval
+      if (overdueIntervalRef.current) {
+        clearInterval(overdueIntervalRef.current);
+      }
+    };
+  }, []);
 
   return (
     <ScreenWrapper bg="#FFBF00">
       <View style={styles.container}>
         <MyHeader title="Lịch sử đặt bàn" showBackButton={false} />
 
-        {loading ? (
+        {loading && bills.length === 0 ? (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Đang tải...</Text>
           </View>
         ) : bills.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Icon.Calendar width={50} height={50} color={theme.colors.textLight} />
-            <Text style={styles.emptyText}>Bạn chưa có đơn đặt bàn nào</Text>
-            <Text style={styles.emptySubText}>Hãy đặt bàn để thưởng thức những món ăn ngon!</Text>
-          </View>
+          renderEmptyComponent()
         ) : (
           <FlatList
             data={bills}
-            keyExtractor={(item) => item.id.toString()}
             renderItem={renderBillItem}
+            keyExtractor={keyExtractor}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
-            refreshing={loading}
-            onRefresh={fetchUserBills}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[theme.colors.primary]}
+                tintColor={theme.colors.primary}
+              />
+            }
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={MAX_RENDER_BATCH}
+            windowSize={WINDOW_SIZE}
+            initialNumToRender={5}
+            updateCellsBatchingPeriod={50}
+            getItemLayout={(data, index) => ({
+              length: 300,
+              offset: 300 * index,
+              index,
+            })}
           />
         )}
       </View>
@@ -554,8 +652,7 @@ const HistoryScr = () => {
   );
 };
 
-export default HistoryScr;
-
+// ✅ Optimized StyleSheet
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -570,10 +667,7 @@ const styles = StyleSheet.create({
     padding: wp(4),
     marginVertical: hp(1),
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3,
@@ -581,27 +675,22 @@ const styles = StyleSheet.create({
   billHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center', // ✅ SỬA thành 'flex-start' để align đúng
+    alignItems: 'center',
     marginBottom: hp(1.5),
   },
-  priceText: {
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  // ✅ THÊM MỚI
   billHeaderLeft: {
     flex: 1,
+  },
+  billId: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.dark,
   },
   billPrice: {
     fontSize: 16,
     fontWeight: '600',
     color: theme.colors.primary,
     marginTop: hp(0.3),
-  },
-  billId: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.dark,
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -625,6 +714,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text,
     flex: 1,
+  },
+  priceText: {
+    fontWeight: '600',
+    color: theme.colors.primary,
   },
   tablesSection: {
     marginTop: hp(1.5),
@@ -672,18 +765,18 @@ const styles = StyleSheet.create({
     gap: wp(2),
   },
   cancelButton: {
-    backgroundColor: '#ff4757',
+    backgroundColor: '#e74c3c',
   },
   arrivedButton: {
     backgroundColor: '#2ed573',
+  },
+  disabledButton: {
+    backgroundColor: '#95a5a6',
   },
   actionButtonText: {
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
-  },
-  disabledButton: {
-    backgroundColor: '#95a5a6',
   },
   visitedSection: {
     marginTop: hp(1.5),
@@ -695,11 +788,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#90ee90',
   },
-  visitedPrice: {
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-    fontSize: 14,
-  },
   visitedIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -709,7 +797,7 @@ const styles = StyleSheet.create({
   visitedText: {
     fontSize: 14,
     fontWeight: '600',
-    color: 'green',
+    color: '#2ed573',
   },
   visitedSubText: {
     fontSize: 12,
@@ -717,36 +805,15 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: hp(0.5),
   },
+  visitedPrice: {
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+    fontSize: 14,
+  },
   countdownText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#2ed573',
-  },
-  unvisitedSection: {
-    marginTop: hp(1.5),
-    paddingTop: hp(1.5),
-    paddingHorizontal: wp(3),
-    paddingVertical: hp(1),
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  unvisitedIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: wp(2),
-    marginBottom: hp(0.5),
-  },
-  unvisitedText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ff6b6b',
-  },
-  unvisitedSubText: {
-    fontSize: 12,
-    color: theme.colors.textLight,
-    fontStyle: 'italic',
   },
   cancelledSection: {
     marginTop: hp(1.5),
@@ -774,6 +841,32 @@ const styles = StyleSheet.create({
     color: theme.colors.textLight,
     fontStyle: 'italic',
   },
+  unvisitedSection: {
+    marginTop: hp(1.5),
+    paddingTop: hp(1.5),
+    paddingHorizontal: wp(3),
+    paddingVertical: hp(1),
+    backgroundColor: '#fff8f0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ffd699',
+  },
+  unvisitedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: wp(2),
+    marginBottom: hp(0.5),
+  },
+  unvisitedText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f39c12',
+  },
+  unvisitedSubText: {
+    fontSize: 12,
+    color: theme.colors.textLight,
+    fontStyle: 'italic',
+  },
   completedSection: {
     marginTop: hp(1.5),
     paddingTop: hp(1.5),
@@ -793,16 +886,17 @@ const styles = StyleSheet.create({
   completedText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2ed573',
+    color: '#27ae60',
   },
   completedSubText: {
     fontSize: 12,
     color: theme.colors.textLight,
     fontStyle: 'italic',
+    marginBottom: hp(0.3),
   },
   completedPrice: {
     fontWeight: 'bold',
-    color: '#2ed573',
+    color: '#27ae60',
     fontSize: 14,
   },
   loadingContainer: {
@@ -834,3 +928,5 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
+
+export default memo(HistoryScr);
