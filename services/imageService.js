@@ -7,7 +7,7 @@ export const getUserImageSrc = imagePath => {
     if (imagePath) {
         return getSupabaseFileUrl(imagePath);
     } else {
-        return require('../assets/images/defaultUser.png')
+        return require('../assets/images/default.png')
     }
 }
 export const getSupabaseFileUrl = filePath => {
@@ -43,7 +43,7 @@ export const uploadFile = async (folderName, fileUri, isImage = true) => {
 
     } catch (error) {
         console.log("Thông báo!", error)
-        return { succes: false, msg: 'Không thể upload ảnh' };
+        return { success: false, msg: 'Không thể upload ảnh' };
     }
 
 }
