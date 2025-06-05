@@ -12,7 +12,7 @@ const MyTableItem = ({
     // Đổi màu icon và nền khi được chọn hoặc đang sử dụng
     let bgColor = 'white';
     let iconColor = 'gray';
-    if (item.state === 'in_use') {
+    if (item.state === 'reserved' || item.state === 'occupied') {
         bgColor = '#ffd6d6';
         iconColor = 'red';
     } else if (isSelected) {
@@ -24,7 +24,7 @@ const MyTableItem = ({
         <TouchableOpacity
             style={[styles.container, { backgroundColor: bgColor, borderColor: isSelected ? 'green' : '#eee', borderWidth: 2 }]}
             onPress={tableClick}
-            disabled={item.state === 'in_use'}
+            disabled={item.state === 'reserved' || item.state === 'occupied'}
             activeOpacity={0.7}
         >
             <MaterialIcons name="table-bar" size={60} color={iconColor} />

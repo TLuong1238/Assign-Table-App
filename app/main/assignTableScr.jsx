@@ -28,15 +28,16 @@ import { theme } from '../../constants/theme';
 import { useAuth } from '../../context/AuthContext';
 import { hp, wp } from '../../helper/common';
 
+import CartItem from '../../components/CartItem';
+import CategoryTab from '../../components/CategoryTab';
+import { useAssignTable } from '../../hook/useAssignTable';
+
 // Icons
 import * as Icon from 'react-native-feather';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Feather from '@expo/vector-icons/Feather';
 import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
 import ProductItem from '../../components/ProductItem';
-import CartItem from '../../components/CartItem';
-import CategoryTab from '../../components/CategoryTab';
-import { useAssignTable } from '../../hook/useAssignTable';
 
 // Constants
 const FLATLIST_CONFIG = {
@@ -49,7 +50,7 @@ const FLATLIST_CONFIG = {
 
 const AssignTableScr = () => {
   const { user } = useAuth();
-  
+
   const {
     tableState, formState, productState, modalState, cart, loading,
     requiredTables, totalCartItems,
@@ -403,200 +404,200 @@ const styles = StyleSheet.create({
   formContainer: { flex: 1, backgroundColor: '#fff7bf', borderRadius: wp(3), marginBottom: hp(1), overflow: 'hidden' },
   formContent: { paddingHorizontal: wp(4), paddingVertical: hp(2), gap: hp(1.5) },
   titleText: { color: 'black', fontSize: wp(5), fontWeight: '600', textAlign: 'center', marginBottom: hp(1) },
-  
+
   dateTimeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: wp(2) },
-  dateTimeButton: { 
-    backgroundColor: theme.colors.light, paddingHorizontal: wp(3), paddingVertical: hp(1.5), 
-    borderRadius: wp(2.5), flexDirection: 'row', alignItems: 'center', gap: wp(2), 
-    borderWidth: 1, borderColor: theme.colors.gray, flex: 1, justifyContent: 'center', minHeight: hp(6) 
+  dateTimeButton: {
+    backgroundColor: theme.colors.light, paddingHorizontal: wp(3), paddingVertical: hp(1.5),
+    borderRadius: wp(2.5), flexDirection: 'row', alignItems: 'center', gap: wp(2),
+    borderWidth: 1, borderColor: theme.colors.gray, flex: 1, justifyContent: 'center', minHeight: hp(6)
   },
   dateTimeText: { fontSize: wp(3.5), color: theme.colors.dark, fontWeight: '500' },
   peopleInputContainer: { width: '32%' },
   peopleInput: { width: '100%' },
   noteInput: { height: hp(8), textAlignVertical: 'top' },
 
-  foodSection: { 
+  foodSection: {
     paddingHorizontal: wp(4), paddingVertical: hp(1.5), borderTopWidth: 1, borderTopColor: 'black',
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.3)' 
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.3)'
   },
-  selectFoodButton: { 
+  selectFoodButton: {
     flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primary,
     paddingHorizontal: wp(4), paddingVertical: hp(1.5), borderRadius: wp(2), gap: wp(2),
-    justifyContent: 'center', marginRight: wp(2), minHeight: hp(6) 
+    justifyContent: 'center', marginRight: wp(2), minHeight: hp(6)
   },
   selectFoodText: { color: 'white', fontSize: wp(4), fontWeight: '600' },
-  cartButton: { 
-    backgroundColor: theme.colors.primary, paddingHorizontal: wp(3), paddingVertical: hp(1.5), 
-    borderRadius: wp(2), position: 'relative', alignItems: 'center', justifyContent: 'center', 
-    minWidth: wp(12), minHeight: hp(6) 
+  cartButton: {
+    backgroundColor: theme.colors.primary, paddingHorizontal: wp(3), paddingVertical: hp(1.5),
+    borderRadius: wp(2), position: 'relative', alignItems: 'center', justifyContent: 'center',
+    minWidth: wp(12), minHeight: hp(6)
   },
-  cartBadge: { 
+  cartBadge: {
     position: 'absolute', top: -hp(0.5), right: -wp(1), backgroundColor: '#ff4757', borderRadius: wp(3),
-    minWidth: wp(5), height: wp(5), justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' 
+    minWidth: wp(5), height: wp(5), justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white'
   },
   cartBadgeText: { color: 'white', fontSize: wp(2.8), fontWeight: 'bold' },
 
   tableSection: { flex: 1, paddingHorizontal: wp(2), paddingBottom: hp(2) },
   floorContainer: { width: wp(87), marginHorizontal: wp(1), flex: 1 },
-  floorHeader: { 
+  floorHeader: {
     alignItems: 'center', paddingVertical: hp(1), backgroundColor: 'rgba(255, 255, 255, 0.8)', borderRadius: wp(2),
     flexDirection: 'row', alignSelf: 'center', paddingHorizontal: wp(3), gap: wp(2), marginBottom: hp(1),
-    borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.1)' 
+    borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.1)'
   },
   floorTitle: { fontSize: wp(5), fontWeight: 'bold', color: theme.colors.dark },
   floorStatus: { fontSize: wp(3.5), color: theme.colors.textLight, fontStyle: 'italic' },
   tableGrid: { paddingHorizontal: wp(2), justifyContent: 'center', flexGrow: 1 },
-  statusContainer: { 
+  statusContainer: {
     marginTop: hp(1), paddingHorizontal: wp(4), paddingVertical: hp(1), backgroundColor: 'rgba(255, 77, 77, 0.1)',
-    borderRadius: wp(2), marginHorizontal: wp(2), borderLeftWidth: 4, borderLeftColor: '#ff4d4d' 
+    borderRadius: wp(2), marginHorizontal: wp(2), borderLeftWidth: 4, borderLeftColor: '#ff4d4d'
   },
   statusText: { color: '#ff4d4d', fontSize: wp(3.8), textAlign: 'center', fontWeight: '500' },
 
   buttonContainer: { paddingVertical: hp(1), paddingHorizontal: wp(4) },
-  submitButton: { 
+  submitButton: {
     marginHorizontal: 0, backgroundColor: theme.colors.primary, borderRadius: wp(3), elevation: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84 
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84
   },
 
   modalContainer: { flex: 1, backgroundColor: 'white' },
-  modalHeader: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: wp(4), 
-    paddingVertical: hp(2), borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: 'white', 
-    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3 
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: wp(4),
+    paddingVertical: hp(2), borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: 'white',
+    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3
   },
   modalTitle: { fontSize: wp(5.5), fontWeight: 'bold', color: theme.colors.dark },
   closeButton: { padding: wp(2), borderRadius: wp(5), backgroundColor: '#f5f5f5' },
 
-  searchContainer: { 
+  searchContainer: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: wp(4), paddingVertical: hp(1.5),
-    borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: 'white' 
+    borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: 'white'
   },
-  searchInputWrapper: { 
+  searchInputWrapper: {
     flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8f9fa', borderRadius: wp(3),
-    marginRight: wp(2), position: 'relative', borderWidth: 1, borderColor: '#e9ecef' 
+    marginRight: wp(2), position: 'relative', borderWidth: 1, borderColor: '#e9ecef'
   },
-  searchInput: { 
-    flex: 1, fontSize: wp(4), paddingHorizontal: wp(3), paddingVertical: hp(1.2), 
-    paddingRight: wp(10), color: theme.colors.dark 
+  searchInput: {
+    flex: 1, fontSize: wp(4), paddingHorizontal: wp(3), paddingVertical: hp(1.2),
+    paddingRight: wp(10), color: theme.colors.dark
   },
-  clearSearchButton: { 
-    position: 'absolute', right: wp(2), padding: wp(1.5), borderRadius: wp(4), backgroundColor: 'rgba(0,0,0,0.1)' 
+  clearSearchButton: {
+    position: 'absolute', right: wp(2), padding: wp(1.5), borderRadius: wp(4), backgroundColor: 'rgba(0,0,0,0.1)'
   },
 
   categoryTabsContainer: { height: hp(8), borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: 'white' },
-  categoryTab: { 
+  categoryTab: {
     paddingHorizontal: wp(4), paddingVertical: hp(1.2), marginHorizontal: wp(1), borderRadius: wp(6),
     backgroundColor: '#f8f9fa', height: hp(5), justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: '#e9ecef', minWidth: wp(20) 
+    borderWidth: 1, borderColor: '#e9ecef', minWidth: wp(20)
   },
-  categoryTabActive: { 
+  categoryTabActive: {
     backgroundColor: theme.colors.primary, borderColor: theme.colors.primary, elevation: 2,
-    shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2 
+    shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2
   },
   categoryTabText: { fontSize: wp(3.5), color: theme.colors.text, fontWeight: '500', textAlign: 'center' },
   categoryTabTextActive: { color: 'white', fontWeight: '600' },
 
   productsContainer: { flex: 1, backgroundColor: '#fafbfc' },
   productsList: { paddingHorizontal: wp(4), paddingTop: hp(1), paddingBottom: hp(2), flexGrow: 1 },
-  productItem: { 
+  productItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: hp(1.5),
     paddingHorizontal: wp(2), borderBottomWidth: 1, borderBottomColor: '#f0f1f2', backgroundColor: 'white',
     borderRadius: wp(2), marginBottom: hp(0.5), elevation: 1, shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1 
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1
   },
   productInfo: { flexDirection: 'row', flex: 1, alignItems: 'center' },
-  productImage: { 
-    width: wp(18), height: wp(18), borderRadius: wp(2), marginRight: wp(3), 
-    backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e9ecef' 
+  productImage: {
+    width: wp(18), height: wp(18), borderRadius: wp(2), marginRight: wp(3),
+    backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e9ecef'
   },
   productDetails: { flex: 1, paddingRight: wp(2) },
-  productName: { 
-    fontSize: wp(4), fontWeight: '600', color: theme.colors.dark, 
-    marginBottom: hp(0.5), lineHeight: wp(5.5) 
+  productName: {
+    fontSize: wp(4), fontWeight: '600', color: theme.colors.dark,
+    marginBottom: hp(0.5), lineHeight: wp(5.5)
   },
   productPrice: { fontSize: wp(3.8), color: theme.colors.primary, fontWeight: 'bold', marginBottom: hp(0.3) },
   productDescription: { fontSize: wp(3.2), color: theme.colors.textLight, lineHeight: wp(4.5) },
   productActions: { alignItems: 'center', justifyContent: 'center', minWidth: wp(28) },
-  addToCartButton: { 
+  addToCartButton: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primary, paddingHorizontal: wp(3),
     paddingVertical: hp(1), borderRadius: wp(2), gap: wp(1.5), elevation: 2, shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2 
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2
   },
   addToCartText: { color: 'white', fontSize: wp(3.5), fontWeight: '600' },
-  quantityControls: { 
-    flexDirection: 'row', alignItems: 'center', gap: wp(2), backgroundColor: 'rgba(0,0,0,0.02)', 
-    borderRadius: wp(3), padding: wp(1) 
+  quantityControls: {
+    flexDirection: 'row', alignItems: 'center', gap: wp(2), backgroundColor: 'rgba(0,0,0,0.02)',
+    borderRadius: wp(3), padding: wp(1)
   },
-  quantityButton: { 
+  quantityButton: {
     backgroundColor: theme.colors.primary, width: wp(8), height: wp(8), borderRadius: wp(4),
     justifyContent: 'center', alignItems: 'center', elevation: 2, shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2 
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2
   },
   quantityButtonDisabled: { backgroundColor: '#ccc', elevation: 0, shadowOpacity: 0 },
-  quantityText: { 
-    fontSize: wp(4.2), fontWeight: 'bold', minWidth: wp(8), textAlign: 'center', 
-    color: theme.colors.dark, backgroundColor: 'white', paddingVertical: hp(0.5), borderRadius: wp(1) 
+  quantityText: {
+    fontSize: wp(4.2), fontWeight: 'bold', minWidth: wp(8), textAlign: 'center',
+    color: theme.colors.dark, backgroundColor: 'white', paddingVertical: hp(0.5), borderRadius: wp(1)
   },
 
-  emptyProducts: { 
+  emptyProducts: {
     flex: 1, justifyContent: 'center', alignItems: 'center', gap: hp(2), paddingHorizontal: wp(8),
-    backgroundColor: 'white', margin: wp(4), borderRadius: wp(3), paddingVertical: hp(4) 
+    backgroundColor: 'white', margin: wp(4), borderRadius: wp(3), paddingVertical: hp(4)
   },
   emptyProductsText: { fontSize: wp(4.2), color: theme.colors.textLight, textAlign: 'center', lineHeight: wp(6) },
-  clearSearchTextButton: { 
+  clearSearchTextButton: {
     marginTop: hp(1), paddingHorizontal: wp(4), paddingVertical: hp(1.2), backgroundColor: theme.colors.primary,
-    borderRadius: wp(3), elevation: 2, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.3, shadowRadius: 2 
+    borderRadius: wp(3), elevation: 2, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3, shadowRadius: 2
   },
   clearSearchTextButtonText: { color: 'white', fontSize: wp(3.5), fontWeight: '600' },
 
   cartList: { paddingHorizontal: wp(4), paddingTop: hp(1), backgroundColor: '#fafbfc' },
-  cartItem: { 
+  cartItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: hp(1.5),
     paddingHorizontal: wp(3), borderBottomWidth: 1, borderBottomColor: '#f0f1f2', backgroundColor: 'white',
     borderRadius: wp(2), marginBottom: hp(0.5), elevation: 1, shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1 
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1
   },
   cartItemInfo: { flex: 1, paddingRight: wp(2) },
-  cartItemName: { 
-    fontSize: wp(4), fontWeight: '600', color: theme.colors.dark, 
-    marginBottom: hp(0.5), lineHeight: wp(5.5) 
+  cartItemName: {
+    fontSize: wp(4), fontWeight: '600', color: theme.colors.dark,
+    marginBottom: hp(0.5), lineHeight: wp(5.5)
   },
   cartItemPrice: { fontSize: wp(3.5), color: theme.colors.textLight, lineHeight: wp(4.5) },
-  cartItemControls: { 
-    flexDirection: 'row', alignItems: 'center', gap: wp(2), backgroundColor: 'rgba(0,0,0,0.02)', 
-    borderRadius: wp(3), padding: wp(1) 
+  cartItemControls: {
+    flexDirection: 'row', alignItems: 'center', gap: wp(2), backgroundColor: 'rgba(0,0,0,0.02)',
+    borderRadius: wp(3), padding: wp(1)
   },
-  cartQuantityButton: { 
-    width: wp(8), height: wp(8), borderRadius: wp(4), backgroundColor: '#f8f9fa', 
-    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e9ecef' 
+  cartQuantityButton: {
+    width: wp(8), height: wp(8), borderRadius: wp(4), backgroundColor: '#f8f9fa',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e9ecef'
   },
   cartQuantityButtonDisabled: { backgroundColor: '#e9ecef', borderColor: '#dee2e6' },
-  cartQuantityText: { 
-    fontSize: wp(4), fontWeight: 'bold', minWidth: wp(8), textAlign: 'center', 
-    color: theme.colors.dark, backgroundColor: 'white', paddingVertical: hp(0.5), borderRadius: wp(1) 
+  cartQuantityText: {
+    fontSize: wp(4), fontWeight: 'bold', minWidth: wp(8), textAlign: 'center',
+    color: theme.colors.dark, backgroundColor: 'white', paddingVertical: hp(0.5), borderRadius: wp(1)
   },
 
-  cartSummary: { 
+  cartSummary: {
     borderTopWidth: 2, borderTopColor: '#e9ecef', paddingHorizontal: wp(4), paddingVertical: hp(2),
-    backgroundColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, 
-    shadowOpacity: 0.1, shadowRadius: 3 
+    backgroundColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1, shadowRadius: 3
   },
-  cartTotal: { 
+  cartTotal: {
     marginBottom: hp(2), paddingVertical: hp(1), paddingHorizontal: wp(3), backgroundColor: '#f8f9fa',
-    borderRadius: wp(2), borderWidth: 1, borderColor: '#e9ecef' 
+    borderRadius: wp(2), borderWidth: 1, borderColor: '#e9ecef'
   },
   cartTotalText: { fontSize: wp(5.2), fontWeight: 'bold', color: theme.colors.primary, textAlign: 'center' },
   cartActions: { flexDirection: 'row', gap: wp(3) },
-  clearCartButton: { 
+  clearCartButton: {
     flex: 1, paddingVertical: hp(1.8), backgroundColor: '#dc3545', borderRadius: wp(3), alignItems: 'center',
-    elevation: 2, shadowColor: '#dc3545', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2 
+    elevation: 2, shadowColor: '#dc3545', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2
   },
   clearCartText: { color: 'white', fontSize: wp(4), fontWeight: '600' },
-  continueButton: { 
-    flex: 1, paddingVertical: hp(1.8), backgroundColor: theme.colors.primary, borderRadius: wp(3), 
-    alignItems: 'center', elevation: 2, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.3, shadowRadius: 2 
+  continueButton: {
+    flex: 1, paddingVertical: hp(1.8), backgroundColor: theme.colors.primary, borderRadius: wp(3),
+    alignItems: 'center', elevation: 2, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3, shadowRadius: 2
   },
   continueText: { color: 'white', fontSize: wp(4), fontWeight: '600' },
 

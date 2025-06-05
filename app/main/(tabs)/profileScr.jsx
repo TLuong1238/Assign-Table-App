@@ -1,157 +1,307 @@
-import { Alert, FlatList, Pressable, StyleSheet, Text, Touchable, TouchableOpacity, View } from 'react-native'
-import React, { useCallback, useRef, useState } from 'react'
-import ScreenWrapper from '../../../components/ScreenWrapper'
-import { useAuth } from '../../../context/AuthContext'
-import { useRouter } from 'expo-router'
-import { hp, wp } from '../../../helper/common'
+import React, { memo, useCallback, useState } from 'react';
+import { 
+  Alert, 
+  FlatList, 
+  Pressable, 
+  StyleSheet, 
+  Text, 
+  TouchableOpacity, 
+  View,
+  RefreshControl
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Icon from 'react-native-feather';
-import { supabase } from '../../../lib/supabase'
-import Avatar from '../../../components/MyAvatar'
-import { theme } from '../../../constants/theme'
-import { fetchPosts } from '../../../services/postServices'
-import MyLoading from '../../../components/MyLoading'
-import MyPostCard from '../../../components/MyPostCard'
-import usePostRt from '../../../hook/usePostRt'
-import MyHeader from '../../../components/MyHeader'
 
+// Components
+import ScreenWrapper from '../../../components/ScreenWrapper';
+import Avatar from '../../../components/MyAvatar';
+import MyLoading from '../../../components/MyLoading';
+import MyPostCard from '../../../components/MyPostCard';
+import MyHeader from '../../../components/MyHeader';
+
+// Context & Hooks
+import { useAuth } from '../../../context/AuthContext';
+import usePostRt from '../../../hook/usePostRt';
+
+// Utils
+import { hp, wp } from '../../../helper/common';
+import { theme } from '../../../constants/theme';
+import { supabase } from '../../../lib/supabase';
+
+// ===== MEMOIZED COMPONENTS =====
+const UserInfo = memo(({ icon: IconComponent, text, color = 'white' }) => (
+  <View style={styles.info}>
+    <IconComponent strokeWidth={2} height={hp(2.5)} width={wp(5)} color={color} />
+    <Text style={styles.infoText}>{text}</Text>
+  </View>
+));
+
+const UserHeader = memo(({ user, router, handleLogout, handleChangePassword }) => (
+  <View style={styles.headerContainer}>
+    <View>
+      <MyHeader title="Profile" showBackButton={false} />
+      
+      {/* ✅ Container cho 2 nút */}
+      <View style={styles.buttonContainer}>
+        {/* ✅ Nút đổi mật khẩu */}
+        <TouchableOpacity style={styles.changePasswordButton} onPress={handleChangePassword}>
+          <Icon.Key strokeWidth={2} width={wp(5)} height={wp(5)} color="#3B82F6" />
+        </TouchableOpacity>
+        
+        {/* ✅ Nút logout */}
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Icon.Power strokeWidth={2} width={wp(5)} height={wp(5)} color="red" />
+        </TouchableOpacity>
+      </View>
+    </View>
+
+    <View style={styles.container}>
+      <View style={styles.profileSection}>
+        <View style={styles.avatarContainer}>
+          <Avatar
+            uri={user?.image}
+            size={hp(20)}
+            rounded={wp(12.5)}
+          />
+          <Pressable 
+            style={styles.editIcon} 
+            onPress={() => router.push('/main/editProfileScr')}
+          >
+            <Icon.Edit strokeWidth={2} width={hp(3)} height={hp(3)} color="black" />
+          </Pressable>
+
+          <View style={styles.userDetails}>
+            <Text style={styles.userName}>{user?.name || 'Chưa có tên'}</Text>
+            <Text style={styles.userBio}>{user?.bio || 'Chưa có tiểu sử'}</Text>
+            
+            <UserInfo icon={Icon.Mail} text={user?.email || 'Chưa có email'} />
+            <UserInfo icon={Icon.Phone} text={user?.phone || 'Chưa cập nhật số điện thoại'} />
+            <UserInfo icon={Icon.Home} text={user?.address || 'Chưa cập nhật địa chỉ'} />
+          </View>
+        </View>
+      </View>
+    </View>
+  </View>
+));
+
+const EmptyPosts = memo(() => (
+  <View style={styles.emptyContainer}>
+    <Icon.FileText width={hp(8)} height={hp(8)} color={theme.colors.textLight} />
+    <Text style={styles.noPosts}>Bạn chưa có bài viết nào</Text>
+    <Text style={styles.noPostsSubtext}>Hãy chia sẻ những khoảnh khắc đáng nhớ!</Text>
+  </View>
+));
+
+const LoadingFooter = memo(({ hasMore, loading, postsLength }) => {
+  if (!hasMore || !loading) return null;
+  
+  return (
+    <View style={{ marginVertical: postsLength === 0 ? hp(12.5) : hp(3.75) }}>
+      <MyLoading />
+    </View>
+  );
+});
+
+// ===== MAIN COMPONENT =====
 const ProfileScr = () => {
   const { user, setAuth } = useAuth();
   const router = useRouter();
-  //
+  const [refreshing, setRefreshing] = useState(false);
+  
   const {
     posts,
     loading,
     hasMore,
     getPosts,
+    removePostFromState,
   } = usePostRt(user, 10, true);
 
-  const onLogout = async () => {
-    setAuth(null);
-    const { error } = await supabase.auth.signOut();
+  // ===== HANDLERS =====
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      "Xác nhận đăng xuất", 
+      "Bạn có chắc chắn muốn đăng xuất không?", 
+      [
+        { text: "Hủy bỏ", style: 'cancel' },
+        {
+          text: "Đồng ý", 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setAuth(null);
+              await supabase.auth.signOut();
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Lỗi', 'Không thể đăng xuất');
+            }
+          }
+        }
+      ]
+    );
+  }, [setAuth]);
 
-    if (error) {
-      console.log('error', error);
-    } else {
-      console.log('Đăng xuất thành công!');
+  // ✅ Handler cho đổi mật khẩu
+  const handleChangePassword = useCallback(() => {
+    Alert.alert(
+      "Đổi mật khẩu",
+      "Bạn sẽ cần xác thực mật khẩu hiện tại để tiếp tục.",
+      [
+        { text: "Hủy bỏ", style: 'cancel' },
+        {
+          text: "Tiếp tục",
+          onPress: () => {
+            router.push('/main/verifyOldPasswordScr');
+          }
+        }
+      ]
+    );
+  }, [router]);
+
+  // ✅ Optimized refresh handler
+  const onRefresh = useCallback(async () => {
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      await getPosts(true);
+    } catch (error) {
+      console.error('Refresh error:', error);
+    } finally {
+      setRefreshing(false);
     }
-  }
+  }, [getPosts, refreshing]);
 
-  const handleLogout = async () => {
-    Alert.alert("Xác nhân", "Bạn có chắc chắn muốn đăng xuất không?", [
-      {
-        text: "Hủy bỏ", onPress: () => console.log("Hủy"),
-        style: 'cancel'
-      },
-      {
-        text: "Đồng ý", onPress: () => onLogout(),
-        style: 'destructive'
-      }
-    ])
-  }
+  const handleEndReached = useCallback(() => {
+    if (hasMore && !loading && !refreshing) {
+      getPosts();
+    }
+  }, [hasMore, loading, refreshing, getPosts]);
 
+  // ✅ Optimized renderPost với conditional edit
+  const renderPost = useCallback(({ item }) => (
+    <MyPostCard
+      item={item}
+      currentUser={user}
+      router={router}
+      showDeleteIcon={true}
+      onEdit={(item) => {
+        // ✅ Chỉ edit khi state === 'accept'
+        if (item.state === 'accept') {
+          router.push({
+            pathname: 'main/newPostScr',
+            params: { post: JSON.stringify(item) }
+          });
+        }
+      }}
+      onDelete={removePostFromState}
+    />
+  ), [user, router, removePostFromState]);
 
+  const keyExtractor = useCallback((item) => item.id.toString(), []);
 
+  // ===== RENDER =====
   return (
-    <ScreenWrapper bg={'#FFBF00'}>
-      {/* user post */}
+    <ScreenWrapper bg="#FFBF00">
       <FlatList
-        ListHeaderComponent={<UserHeader user={user} router={router} handleLogout={handleLogout} />}
-        ListHeaderComponentStyle={{ marginBottom: 20 }}
-        //
+        ListHeaderComponent={
+          <UserHeader 
+            user={user} 
+            router={router} 
+            handleLogout={handleLogout}
+            handleChangePassword={handleChangePassword} // ✅ Pass handler
+          />
+        }
+        ListHeaderComponentStyle={styles.headerStyle}
+        ListEmptyComponent={!loading && !refreshing ? <EmptyPosts /> : null}
+        ListFooterComponent={
+          <LoadingFooter 
+            hasMore={hasMore} 
+            loading={loading} 
+            postsLength={posts.length} 
+          />
+        }
         data={posts}
+        renderItem={renderPost}
+        keyExtractor={keyExtractor}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listStyle}
-        keyExtractor={item => item.id.toString()}
-        renderItem={({ item }) => <MyPostCard
-          item={item}
-          currentUser={user}
-          router={router}
-        />
-        }
-        onEndReached={() => {
-          if (hasMore && !loading) getPosts();
-        }}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.2}
-        ListFooterComponent={hasMore && loading ? (
-          <View style={{ marginVertical: posts.length == 0 ? 100 : 30 }}>
-            <MyLoading />
-          </View>
-        )
-          : null
-
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        initialNumToRender={3}
+        // ✅ Optimized refresh control
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#FFBF00']}
+            tintColor="#FFBF00"
+            title="Đang làm mới..."
+            titleColor="#FFBF00"
+          />
         }
-
       />
     </ScreenWrapper>
-  )
-}
+  );
+};
 
-const UserHeader = ({ user, router, handleLogout }) => {
-  return (
-    <View style={{ flex: 1, backgroundColor: '#FFBF00', paddingHorizontal: wp(2) }}>
-      <View>
-        <MyHeader title="Profile" showBackButton={false} />
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Icon.Power strokeWidth={2} width={wp(5)} height={wp(5)} color={'red'} />
-        </TouchableOpacity>
-      </View>
-      {/* profile info */}
-      <View style={styles.container}>
-        <View style={{ gap: 15 }}>
-          {/* avatar */}
-          <View style={styles.avatarContainer}>
-            <Avatar
-              uri={user?.image}
-              size={hp(20)}
-              rounded={50}
-            />
-            <Pressable style={styles.editIcon} onPress={() => router.push('/main/editProfileScr')}>
-              <Icon.Edit strokeWidth={2} width={hp(3)} height={hp(3)} color={'black'} />
-            </Pressable>
-
-            {/* userName */}
-            <View style={{ alignItems: 'flex-start',gap: 5, paddingLeft: 10 }}>
-              <Text style={styles.userName}>{user && user.name} </Text>
-              <Text style={{color: 'white'}}>{user && user.bio} </Text>
-              {/* email, phone, bio */}
-              {/* email, phone, bio */}
-              <View style={styles.info}>
-                <Icon.Mail strokeWidth={2} height={hp(2.5)} width={wp(5)} color={'white'} />
-                <Text style={styles.infoText}>{user.email}</Text>
-              </View>
-              <View style={styles.info}>
-                <Icon.Phone strokeWidth={2} height={hp(2.5)} width={wp(5)} color={'white'} />
-                <Text style={styles.infoText}>{user?.phone || 'Bạn chưa cập nhật số điện thoại'}</Text>
-              </View>
-              <View style={styles.info}>
-                <Icon.Home strokeWidth={2} height={hp(2.5)} width={wp(5)} color={'white'} />
-                <Text style={styles.infoText}>{user?.address || 'Bạn chưa cập nhật thông tin liên kết'}</Text>
-              </View>
-
-            </View>
-          </View>
-        </View>
-      </View>
-    </View>
-
-  )
-
-
-}
-
-export default ProfileScr
-
+// ===== STYLES =====
 const styles = StyleSheet.create({
-  logoutButton: {
+  headerContainer: {
+    flex: 1,
+    backgroundColor: '#FFBF00',
+    paddingHorizontal: wp(2)
+  },
+  headerStyle: {
+    marginBottom: hp(2.5)
+  },
+  
+  // ✅ Container cho 2 nút
+  buttonContainer: {
     position: 'absolute',
     right: 0,
-    marginTop: 10,
-    padding: 5,
-    borderRadius: 10,
-    backgroundColor: "#fee2e2"
+    marginTop: hp(1.25),
+    flexDirection: 'row',
+    gap: wp(2),
   },
+  
+  // ✅ Nút đổi mật khẩu
+  changePasswordButton: {
+    padding: wp(1.25),
+    borderRadius: wp(2.5),
+    backgroundColor: "#dbeafe", // Light blue background
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    elevation: 2,
+  },
+  
+  // ✅ Nút logout
+  logoutButton: {
+    padding: wp(1.25),
+    borderRadius: wp(2.5),
+    backgroundColor: "#fee2e2", // Light red background
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    elevation: 2,
+  },
+  
   container: {
     flex: 1,
+  },
+  profileSection: {
+    gap: hp(1.875)
   },
   avatarContainer: {
     marginTop: hp(2),
@@ -161,46 +311,72 @@ const styles = StyleSheet.create({
   editIcon: {
     position: 'absolute',
     bottom: 0,
-    left: 130,
+    left: wp(32.5),
     backgroundColor: 'white',
-    padding: 7,
-    borderRadius: 50,
-    borderWidth: 1,
+    padding: wp(1.75),
+    borderRadius: wp(12.5),
+    borderWidth: wp(0.25),
     borderColor: 'white',
     shadowColor: theme.colors.textLight,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: hp(0.25) },
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 7,
+    shadowRadius: wp(0.96),
+    elevation: wp(1.75),
+  },
+  userDetails: {
+    alignItems: 'flex-start',
+    gap: hp(0.625),
+    paddingLeft: wp(2.5),
+    flex: 1
   },
   userName: {
     fontSize: hp(4),
     fontWeight: 'bold',
     color: 'white',
-    textAlign: 'flex-start',
+  },
+  userBio: {
+    color: 'white',
+    fontSize: hp(1.8),
+    fontStyle: 'italic',
+    opacity: 0.9
   },
   info: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: wp(2.5),
     alignSelf: 'flex-start'
   },
   infoText: {
     fontSize: hp(2),
     color: 'white',
     fontWeight: '500',
+    flex: 1
   },
   listStyle: {
-    paddingTop: 20,
-    paddingHorizontal: wp(4)
+    paddingTop: hp(2.5),
+    paddingHorizontal: wp(4),
+    flexGrow: 1
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: hp(10),
+    gap: hp(2)
   },
   noPosts: {
     fontSize: hp(2.5),
     textAlign: 'center',
-    color: theme.colors.text
+    color: theme.colors.text,
+    fontWeight: '600'
   },
+  noPostsSubtext: {
+    fontSize: hp(1.8),
+    textAlign: 'center',
+    color: theme.colors.textLight,
+    paddingHorizontal: wp(8),
+    lineHeight: hp(2.5)
+  }
+});
 
-})
+export default memo(ProfileScr);

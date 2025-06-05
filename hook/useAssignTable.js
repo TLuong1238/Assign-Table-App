@@ -439,7 +439,7 @@ export const useAssignTable = (user) => {
         name: formState.name,
         time: formState.time.toISOString(),
         state: "in_order",
-        visit: "on_process",
+        visit: "visited",
         price: cart.cartPrice,
       };
 

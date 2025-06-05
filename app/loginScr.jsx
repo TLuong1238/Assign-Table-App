@@ -40,10 +40,13 @@ const LoginScr = () => {
       Alert.alert('Thông báo', error.message);
       return;
     }
-
-
-    // setLoading(true); 
   }
+
+  // ✅ Function để chuyển đến màn hình quên mật khẩu
+  const handleForgotPassword = () => {
+    router.push('/forgotPassScr');
+  };
+
   return (
     <ScreenWrapper bg='#FFBF00'>
       <View style={styles.container}>
@@ -62,6 +65,8 @@ const LoginScr = () => {
           <MyInput
             icon={<Icon.Mail stroke={theme.colors.dark} strokeWidth={2} width={26} height={26} />}
             placeholder='Nhập email của bạn...'
+            keyboardType="email-address"
+            autoCapitalize="none"
             onChangeText={value => emailRef.current = value}
           />
           <MyInput
@@ -70,22 +75,26 @@ const LoginScr = () => {
             secureTextEntry
             onChangeText={value => passwordRef.current = value}
           />
-          <Text style={styles.forgotPasswordText}>
-            Quên mật khẩu?
-          </Text>
+          
+          {/* ✅ Pressable cho "Quên mật khẩu?" */}
+          <Pressable onPress={handleForgotPassword}>
+            <Text style={styles.forgotPasswordText}>
+              Quên mật khẩu?
+            </Text>
+          </Pressable>
+          
           <MyButton title='Đăng nhập' loading={loading} onPress={onSubmit}
             buttonStyle={{ width: wp(70), alignItems: 'center', alignSelf: 'center' }}
           />
+          
           {/* footer */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>Bạn chưa có tài khoản?</Text>
-            {/* <Pressable onPress={() => navigation.navigate('SignUp')}> */}
             <Pressable onPress={() => router.push('/signUpScr')}>
               <Text style={{ color: theme.colors.primary, fontSize: hp(2.5), fontWeight: '500' }}>
                 Đăng ký
               </Text>
             </Pressable>
-
           </View>
         </View>
 
@@ -115,6 +124,9 @@ const styles = StyleSheet.create({
     fontSize: hp(2.5),
     fontWeight: '500',
     color: theme.colors.text,
+    // ✅ Thêm styling để người dùng biết có thể nhấn được
+    textDecorationLine: 'underline',
+    opacity: 0.8,
   },
   footer: {
     flexDirection: 'row',
@@ -122,6 +134,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-
-
+  footerText: {
+    fontSize: hp(2.2),
+    fontWeight: '500',
+    color: theme.colors.text,
+  },
 })
