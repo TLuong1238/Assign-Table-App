@@ -227,7 +227,8 @@ const useImageHandler = (currentImage, onImageChange) => {
 
     const imageSource = useMemo(() => {
         if (!currentImage) {
-            return require('../../assets/images/defaultUser.png');
+            // return require('../../assets/images/defaultUser.png');
+            return { uri: 'https://www.lewesac.co.uk/wp-content/uploads/2017/12/default-avatar.jpg' }; 
         }
 
         // Local image (newly selected)

@@ -7,7 +7,7 @@ export const getUserImageSrc = imagePath => {
     if (imagePath) {
         return getSupabaseFileUrl(imagePath);
     } else {
-        return require('../assets/images/default.png')
+       return { uri: 'https://www.lewesac.co.uk/wp-content/uploads/2017/12/default-avatar.jpg' }; 
     }
 }
 export const getSupabaseFileUrl = filePath => {

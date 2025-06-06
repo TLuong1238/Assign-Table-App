@@ -21,7 +21,7 @@ import MyHeader from '../../../components/MyHeader';
 
 // Context & Hooks
 import { useAuth } from '../../../context/AuthContext';
-import usePostRt from '../../../hook/usePostRt';
+import { usePostRt } from '../../../hook/usePostRt'
 
 // Utils
 import { hp, wp } from '../../../helper/common';
@@ -39,7 +39,7 @@ const UserInfo = memo(({ icon: IconComponent, text, color = 'white' }) => (
 const UserHeader = memo(({ user, router, handleLogout, handleChangePassword }) => (
   <View style={styles.headerContainer}>
     <View>
-      <MyHeader title="Profile" showBackButton={false} />
+      <MyHeader title="Trang cá nhân" showBackButton={false} />
       
       {/* ✅ Container cho 2 nút */}
       <View style={styles.buttonContainer}>
