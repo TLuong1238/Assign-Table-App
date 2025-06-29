@@ -32,7 +32,7 @@ const VerifyOldPasswordScr = () => {
 
     setLoading(true);
     try {
-      // ✅ Xác thực mật khẩu cũ bằng cách sign in
+      // verify old password with Supabase
       const { error } = await supabase.auth.signInWithPassword({
         email: user.email,
         password: oldPassword,
@@ -44,7 +44,7 @@ const VerifyOldPasswordScr = () => {
         return;
       }
 
-      // ✅ Success - chuyển sang changePasswordScr
+      // changePasswordScr
       Alert.alert(
         'Xác thực thành công!',
         'Mật khẩu đúng. Chuyển sang tạo mật khẩu mới.',
@@ -56,7 +56,7 @@ const VerifyOldPasswordScr = () => {
                 pathname: '/changePasswordScr',
                 params: { 
                   email: user.email,
-                  fromProfile: 'true' // ✅ Flag để biết đến từ profile
+                  fromProfile: 'true' // 
                 }
               });
             }

@@ -19,7 +19,6 @@ class CronService {
         const result = await checkAndUpdateExpiredBills();
         
         if (result.success) {
-          console.log(`✅ CRON SUCCESS: Processed ${result.count || 0} expired bills`);
           
           // log database
           if (result.count > 0) {
@@ -32,7 +31,6 @@ class CronService {
         console.error('❌ CRON ERROR:', error);
       }
       
-      console.log('🏁 CRON JOB COMPLETED');
     }, {
       scheduled: false, 
       timezone: "Asia/Ho_Chi_Minh" // Timezone VN

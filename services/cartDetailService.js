@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 
-// ✅ Tạo cart detail cho bill
+//  cart detail for bill
 export const createCartDetail = async (billId, cartDetails) => {
   try {
     console.log('Creating cart details for bill:', billId);
@@ -40,7 +40,7 @@ export const createCartDetail = async (billId, cartDetails) => {
 
     console.log('Cart details created successfully:', data);
 
-    // ✅ Tính tổng tiền và cập nhật bill
+    //  Calculate total price and update bill
     const totalPrice = detailsToInsert.reduce((sum, detail) => sum + detail.price, 0);
     
     const updateResult = await updateBillPrice(billId, totalPrice);
@@ -63,7 +63,7 @@ export const createCartDetail = async (billId, cartDetails) => {
   }
 };
 
-// ✅ Cập nhật tổng tiền của bill
+//  Update bill total price
 export const updateBillPrice = async (billId, totalPrice) => {
   try {
     console.log('Updating bill price:', { billId, totalPrice });
@@ -101,7 +101,7 @@ export const updateBillPrice = async (billId, totalPrice) => {
   }
 };
 
-// ✅ Lấy cart details theo bill ID
+//  Fetch cart details by bill ID
 export const fetchCartDetailsByBillId = async (billId) => {
   try {
     console.log('Fetching cart details for bill:', billId);
@@ -144,7 +144,7 @@ export const fetchCartDetailsByBillId = async (billId) => {
   }
 };
 
-// ✅ Cập nhật số lượng cart detail
+//  Update cart detail quantity
 export const updateCartDetailQuantity = async (detailId, newQuantity, unitPrice) => {
   try {
     console.log('Updating cart detail quantity:', { detailId, newQuantity, unitPrice });
@@ -195,7 +195,7 @@ export const updateCartDetailQuantity = async (detailId, newQuantity, unitPrice)
   }
 };
 
-// ✅ Xóa cart detail
+//  Delete cart detail
 export const deleteCartDetail = async (detailId) => {
   try {
     console.log('Deleting cart detail:', detailId);
@@ -242,12 +242,12 @@ export const deleteCartDetail = async (detailId) => {
   }
 };
 
-// ✅ Tính lại tổng tiền bill dựa trên cart details
+//  Recalculate bill total price based on cart details
 export const recalculateBillPrice = async (billId) => {
   try {
     console.log('Recalculating bill price for:', billId);
 
-    // Lấy tất cả cart details của bill
+    // Fetch all cart details for the bill
     const { data: cartDetails, error } = await supabase
       .from('detailsCart')
       .select('price')
@@ -276,7 +276,7 @@ export const recalculateBillPrice = async (billId) => {
   }
 };
 
-// ✅ Xóa tất cả cart details của bill
+//  Clear all cart details for bill
 export const clearCartDetailsByBillId = async (billId) => {
   try {
     console.log('Clearing all cart details for bill:', billId);

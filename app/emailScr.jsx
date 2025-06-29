@@ -11,13 +11,13 @@ import * as Icon from 'react-native-feather'
 
 const EmailScr = () => {
     const router = useRouter()
-    const { email } = useLocalSearchParams() // Nhận email từ params
+    const { email } = useLocalSearchParams() //  email from params
     const [otp, setOtp] = useState(['', '', '', '', '', ''])
     const [loading, setLoading] = useState(false)
     const [countdown, setCountdown] = useState(60)
     const [canResend, setCanResend] = useState(false)
 
-    // Refs cho các input OTP
+    // Refs for input OTP
     const inputRefs = useRef([])
 
     useEffect(() => {
@@ -29,7 +29,7 @@ const EmailScr = () => {
         }
     }, [countdown])
 
-    // Xử lý nhập OTP
+    // handle OTP
     const handleOtpChange = (value, index) => {
         if (value.length > 1) return // Chỉ cho phép 1 ký tự
 
@@ -37,20 +37,20 @@ const EmailScr = () => {
         newOtp[index] = value
         setOtp(newOtp)
 
-        // Tự động chuyển sang ô tiếp theo
+        // next input focus
         if (value && index < 5) {
             inputRefs.current[index + 1]?.focus()
         }
     }
 
-    // Xử lý xóa
+    // handle Backspace
     const handleKeyPress = (e, index) => {
         if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
             inputRefs.current[index - 1]?.focus()
         }
     }
 
-    // Xác nhận OTP
+    // verify OTP
     const verifyOtp = async () => {
         const otpCode = otp.join('')
 
@@ -94,7 +94,7 @@ const EmailScr = () => {
         setLoading(false)
     }
 
-    // Gửi lại OTP
+    // resend OTP
     const resendOtp = async () => {
         if (!canResend) return
 

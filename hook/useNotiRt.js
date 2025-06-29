@@ -8,7 +8,7 @@ export default function useNotiRt(user, limit = 20) {
     const [hasMore, setHasMore] = useState(true);
     const notiMapRef = useRef(new Map());
 
-    // Fetch thông báo từ server
+    // Fetch notifications from server
     const getNotis = useCallback(async () => {
         if (loading || !hasMore || !user) return;
         setLoading(true);
@@ -24,7 +24,7 @@ export default function useNotiRt(user, limit = 20) {
                     }
                 });
 
-                // Cập nhật state
+                // Update state
                 setNotis((prev) => [...prev, ...res.data]);
                 setHasMore(res.data.length === limit);
             }
@@ -35,7 +35,7 @@ export default function useNotiRt(user, limit = 20) {
         }
     }, [loading, hasMore, noti.length, user, limit]);
 
-    // Xử lý thông báo mới từ realtime
+    // Handle new notification from realtime
     const handleNewNotification = useCallback(async (payload) => {
         console.log(`[NOTIFICATION] Received new notification:`, payload);
 
@@ -64,7 +64,7 @@ export default function useNotiRt(user, limit = 20) {
         }
     }, []);
 
-    // Thiết lập kênh realtime
+    // Set up realtime channel
     useEffect(() => {
         if (!user) return;
 
@@ -81,7 +81,7 @@ export default function useNotiRt(user, limit = 20) {
             }, handleNewNotification)
             .subscribe((status) => console.log(`Notifications channel status: ${status}`));
 
-        // Fetch thông báo ban đầu
+        // Fetch initial notifications
         getNotis();
 
         return () => {

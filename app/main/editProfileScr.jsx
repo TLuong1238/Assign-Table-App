@@ -33,8 +33,8 @@ const VALIDATION_RULES = {
     },
     [FORM_FIELDS.PHONE]: {
         required: true,
-        pattern: /^[0-9]{10,11}$/,
-        message: 'Số điện thoại phải có 10-11 chữ số'
+        pattern: /^[0-9]{10}$/,
+        message: 'Số điện thoại phải có 10 chữ số'
     },
     [FORM_FIELDS.ADDRESS]: {
         required: true,
@@ -44,9 +44,9 @@ const VALIDATION_RULES = {
     },
     [FORM_FIELDS.BIO]: {
         required: true,
-        minLength: 10,
+        minLength: 5,
         maxLength: 500,
-        message: 'Mô tả phải từ 10-500 ký tự'
+        message: 'Mô tả phải từ 5-500 ký tự'
     },
     [FORM_FIELDS.IMAGE]: {
         required: true,
@@ -208,12 +208,12 @@ const useImageHandler = (currentImage, onImageChange) => {
                     return;
                 }
 
-                console.log('✅ Image selected:', {
-                    uri: selectedImage.uri,
-                    width: selectedImage.width,
-                    height: selectedImage.height,
-                    size: selectedImage.fileSize
-                });
+                // console.log('Image selected:', {
+                //     uri: selectedImage.uri,
+                //     width: selectedImage.width,
+                //     height: selectedImage.height,
+                //     size: selectedImage.fileSize
+                // });
 
                 onImageChange(selectedImage.uri);
             }
@@ -290,29 +290,25 @@ const EditProfileScreen = () => {
 
             // Upload image if changed
             if (userData.image && userData.image !== currentUser?.image) {
-                console.log('🖼️ Uploading new image...');
                 
                 try {
                     const imageRes = await uploadFile('profiles', userData.image, true);
                     if (imageRes.success) {
                         userData.image = imageRes.data;
-                        console.log('✅ Image uploaded successfully');
                     } else {
                         throw new Error(imageRes.msg || 'Upload failed');
                     }
                 } catch (imageError) {
-                    console.error('❌ Image upload error:', imageError);
+                    console.error('Image upload error:', imageError);
                     Alert.alert('Lỗi!', 'Không thể tải ảnh lên. Vui lòng thử lại.');
                     return;
                 }
             }
 
             // Update user data
-            console.log('📝 Updating user data...');
             const res = await updateUser(currentUser?.id, userData);
 
             if (res.success) {
-                console.log('✅ Profile updated successfully');
                 Alert.alert(
                     'Thành công!', 
                     'Cập nhật thông tin thành công',
@@ -327,12 +323,12 @@ const EditProfileScreen = () => {
                     ]
                 );
             } else {
-                console.error('❌ Update failed:', res.msg);
+                console.error('Update failed:', res.msg);
                 Alert.alert('Lỗi!', res.msg || 'Có lỗi xảy ra, vui lòng thử lại');
             }
 
         } catch (error) {
-            console.error('❌ Submit error:', error);
+            console.error('Submit error:', error);
             
             let errorMessage = 'Có lỗi không xác định xảy ra';
             if (error?.message) {

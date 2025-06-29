@@ -42,7 +42,7 @@ const LoginScr = () => {
     }
   }
 
-  // ✅ Function để chuyển đến màn hình quên mật khẩu
+  // to forgot password screen
   const handleForgotPassword = () => {
     router.push('/forgotPassScr');
   };
@@ -75,8 +75,7 @@ const LoginScr = () => {
             secureTextEntry
             onChangeText={value => passwordRef.current = value}
           />
-          
-          {/* ✅ Pressable cho "Quên mật khẩu?" */}
+          {/* forgot password */}
           <Pressable onPress={handleForgotPassword}>
             <Text style={styles.forgotPasswordText}>
               Quên mật khẩu?
@@ -124,7 +123,6 @@ const styles = StyleSheet.create({
     fontSize: hp(2.5),
     fontWeight: '500',
     color: theme.colors.text,
-    // ✅ Thêm styling để người dùng biết có thể nhấn được
     textDecorationLine: 'underline',
     opacity: 0.8,
   },

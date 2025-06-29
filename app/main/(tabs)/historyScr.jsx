@@ -1,19 +1,11 @@
 import React, { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
-  Alert, 
-  StyleSheet, 
-  AppState, 
-  RefreshControl 
-} from 'react-native';
+import { View,Text,FlatList,TouchableOpacity,Alert,StyleSheet,AppState,RefreshControl} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 // Components & Utils
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import MyHeader from '../../../components/MyHeader';
+import MyLoading from '../../../components/MyLoading';
 import { useAuth } from '../../../context/AuthContext';
 import { hp, wp } from '../../../helper/common';
 import { theme } from '../../../constants/theme';
@@ -28,9 +20,9 @@ import { getStatusColor, getStatusText, getBillStatus, BILL_STATUS } from '../..
 
 // ===== CONSTANTS =====
 const CONFIG = {
-  REFRESH_INTERVAL: 60 * 1000, // 60 seconds
-  OVERDUE_THRESHOLD: 20, // 20 minutes
-  AUTO_COMPLETE_DELAY: 40 * 60 * 1000, // 40 minutes
+  REFRESH_INTERVAL: 60 * 1000, // time refresh
+  OVERDUE_THRESHOLD: 15, // time if customer does not arrive 
+  AUTO_COMPLETE_DELAY: 40 * 60 * 1000, // time after arrival
   FLATLIST: {
     maxToRenderPerBatch: 10,
     windowSize: 10,
@@ -41,6 +33,7 @@ const CONFIG = {
 };
 
 // ===== UTILITIES =====
+// time status
 const TimeUtils = {
   calculateTimeStatus: (bookingTime) => {
     const now = new Date();
@@ -83,52 +76,10 @@ const TimeUtils = {
       status: 'expired',
       canArrive: false
     };
-  },
-
-  formatTimeLeft: (startTime) => {
-    const now = new Date();
-    const start = new Date(startTime);
-    const endTime = new Date(start.getTime() + CONFIG.AUTO_COMPLETE_DELAY);
-    const diff = endTime - now;
-
-    if (diff <= 0) return 'Đã hết thời gian';
-
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
 };
 
 // ===== COMPONENTS =====
-const CountdownTimer = memo(({ startTime }) => {
-  const [timeLeft, setTimeLeft] = useState('');
-  const intervalRef = useRef(null);
-
-  const updateTime = useCallback(() => {
-    const newTimeLeft = TimeUtils.formatTimeLeft(startTime);
-    setTimeLeft(newTimeLeft);
-    return newTimeLeft !== 'Đã hết thời gian';
-  }, [startTime]);
-
-  useEffect(() => {
-    updateTime();
-    intervalRef.current = setInterval(() => {
-      if (!updateTime()) {
-        clearInterval(intervalRef.current);
-      }
-    }, 1000);
-
-    return () => clearInterval(intervalRef.current);
-  }, [updateTime]);
-
-  return (
-    <Text style={styles.countdownText}>
-      Thời gian còn lại: {timeLeft}
-    </Text>
-  );
-});
 
 const BillInfoRow = memo(({ icon, text, iconColor = theme.colors.textLight, textStyle = {} }) => (
   <View style={styles.infoRow}>
@@ -139,7 +90,7 @@ const BillInfoRow = memo(({ icon, text, iconColor = theme.colors.textLight, text
 
 const TablesSection = memo(({ details, getTableName }) => {
   const tableIds = [...new Set(details.map(detail => detail.tableId))];
-  
+
   return (
     <View style={styles.tablesSection}>
       <Text style={styles.tablesTitle}>Bàn đã đặt:</Text>
@@ -165,7 +116,6 @@ const StatusSection = memo(({ billStatus, item }) => {
             Tổng chi phí: <Text style={styles.visitedPrice}>{item.price?.toLocaleString('vi-VN') || 0}đ</Text>
           </Text>
           <Text style={styles.visitedSubText}>Chúc bạn có bữa ăn ngon miệng!</Text>
-          <CountdownTimer startTime={item.time} />
         </>
       )
     },
@@ -199,10 +149,10 @@ const StatusSection = memo(({ billStatus, item }) => {
   return (
     <View style={config.style}>
       <View style={styles.statusIndicator}>
-        {React.createElement(Icon[config.indicator.icon], { 
-          width: 20, 
-          height: 20, 
-          color: config.indicator.color 
+        {React.createElement(Icon[config.indicator.icon], {
+          width: 20,
+          height: 20,
+          color: config.indicator.color
         })}
         <Text style={[styles.statusIndicatorText, { color: config.indicator.color }]}>
           {config.indicator.text}
@@ -273,7 +223,7 @@ const HistoryScr = () => {
       const billRes = await fetchBillByUser(user.id);
 
       if (billRes.success && billRes.data.length > 0) {
-        const sortedBills = billRes.data.sort((a, b) => 
+        const sortedBills = billRes.data.sort((a, b) =>
           new Date(b.created_at) - new Date(a.created_at)
         );
 
@@ -309,9 +259,9 @@ const HistoryScr = () => {
       const now = new Date();
       const overdueBills = bills.filter(bill => {
         const minutesDiff = (now - new Date(bill.time)) / (1000 * 60);
-        return bill.state === 'in_order' && 
-               bill.visit === 'on_process' && 
-               minutesDiff > CONFIG.OVERDUE_THRESHOLD;
+        return bill.state === 'in_order' &&
+          bill.visit === 'un_visited' &&
+          minutesDiff > CONFIG.OVERDUE_THRESHOLD;
       });
 
       if (overdueBills.length === 0) return;
@@ -319,7 +269,7 @@ const HistoryScr = () => {
       const updatePromises = overdueBills.map(async (bill) => {
         try {
           const updateRes = await updateBill(bill.id, {
-            visit: 'unvisited',
+            visit: 'un_visited',
             state: 'cancelled'
           });
 
@@ -399,10 +349,10 @@ const HistoryScr = () => {
             setLoading(true);
             try {
               const visitedTime = new Date().toISOString();
-              
+
               const updateRes = await updateBill(bill.id, {
                 visit: 'visited',
-                time: visitedTime // ✅ Update time to current moment
+                time: visitedTime
               });
 
               if (updateRes.success) {
@@ -485,8 +435,8 @@ const HistoryScr = () => {
           <BillInfoRow icon="Phone" text={item.phone} />
           <BillInfoRow icon="Users" text={`${item.num_people} người`} />
           <BillInfoRow icon="Clock" text={new Date(item.time).toLocaleString('vi-VN')} />
-          <BillInfoRow 
-            icon="DollarSign" 
+          <BillInfoRow
+            icon="DollarSign"
             text={item.price ? `${item.price.toLocaleString('vi-VN')}đ` : 'Chưa có món ăn'}
             iconColor={theme.colors.primary}
             textStyle={styles.priceText}
@@ -511,11 +461,11 @@ const HistoryScr = () => {
 
         {/* Actions */}
         {billStatus === BILL_STATUS.WAITING && timeStatus.status !== 'expired' && (
-          <ActionButtons 
-            item={item} 
-            timeStatus={timeStatus} 
-            onCancel={handleCancelBill} 
-            onArrived={handleArrived} 
+          <ActionButtons
+            item={item}
+            timeStatus={timeStatus}
+            onCancel={handleCancelBill}
+            onArrived={handleArrived}
           />
         )}
 
@@ -602,17 +552,27 @@ const HistoryScr = () => {
     };
   }, []);
 
+  // Loading
+  if (loading && bills.length === 0) {
+    return (
+      <ScreenWrapper bg="#FFBF00">
+        <View style={styles.container}>
+          <MyHeader title="Lịch sử đặt bàn" showBackButton={false} />
+          <View style={styles.fullScreenLoading}>
+            <MyLoading text="Đang tải lịch sử đặt bàn..." />
+          </View>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
   // ===== RENDER =====
   return (
     <ScreenWrapper bg="#FFBF00">
       <View style={styles.container}>
         <MyHeader title="Lịch sử đặt bàn" showBackButton={false} />
 
-        {loading && bills.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Đang tải...</Text>
-          </View>
-        ) : bills.length === 0 ? (
+        {bills.length === 0 ? (
           <EmptyState />
         ) : (
           <FlatList
@@ -650,85 +610,87 @@ const HistoryScr = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: wp(4) },
   listContainer: { paddingBottom: hp(2) },
-  
+
   billCard: {
     backgroundColor: 'white', borderRadius: 12, padding: wp(4), marginVertical: hp(1),
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1,
     shadowRadius: 3, elevation: 3
   },
-  
+
   billHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: hp(1.5) },
   billHeaderLeft: { flex: 1 },
   billId: { fontSize: 18, fontWeight: 'bold', color: theme.colors.dark },
   billPrice: { fontSize: 16, fontWeight: '600', color: theme.colors.primary, marginTop: hp(0.3) },
-  
+
   statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 15 },
   statusText: { color: 'white', fontSize: 12, fontWeight: '600' },
-  
+
   billInfo: { gap: hp(0.8) },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: wp(2) },
   infoText: { fontSize: 14, color: theme.colors.text, flex: 1 },
   priceText: { fontWeight: '600', color: theme.colors.primary },
-  
-  tablesSection: { 
-    marginTop: hp(1.5), paddingTop: hp(1.5), 
-    borderTopWidth: 1, borderTopColor: theme.colors.gray 
+
+  tablesSection: {
+    marginTop: hp(1.5), paddingTop: hp(1.5),
+    borderTopWidth: 1, borderTopColor: theme.colors.gray
   },
   tablesTitle: { fontSize: 14, fontWeight: '600', color: theme.colors.dark, marginBottom: hp(1) },
   tablesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: wp(2) },
   tableChip: { backgroundColor: theme.colors.primaryLight, paddingHorizontal: wp(3), paddingVertical: hp(0.5), borderRadius: 20 },
   tableText: { fontSize: 12, color: theme.colors.primary, fontWeight: '500' },
-  
-  actionSection: { 
+
+  actionSection: {
     flexDirection: 'row', gap: wp(3), marginTop: hp(1.5), paddingTop: hp(1.5),
-    borderTopWidth: 1, borderTopColor: theme.colors.gray 
+    borderTopWidth: 1, borderTopColor: theme.colors.gray
   },
-  actionButton: { 
+  actionButton: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: hp(1.2), borderRadius: 8, gap: wp(2) 
+    paddingVertical: hp(1.2), borderRadius: 8, gap: wp(2)
   },
   cancelButton: { backgroundColor: '#e74c3c' },
   arrivedButton: { backgroundColor: '#2ed573' },
   disabledButton: { backgroundColor: '#95a5a6' },
   actionButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
-  
+
   // Status sections
-  visitedSection: { 
+  visitedSection: {
     marginTop: hp(1.5), paddingHorizontal: wp(3), paddingVertical: hp(1),
-    backgroundColor: '#f0fff4', borderRadius: 8, borderWidth: 1, borderColor: '#90ee90' 
+    backgroundColor: '#f0fff4', borderRadius: 8, borderWidth: 1, borderColor: '#90ee90'
   },
-  cancelledSection: { 
+  cancelledSection: {
     marginTop: hp(1.5), paddingHorizontal: wp(3), paddingVertical: hp(1),
-    backgroundColor: '#fff0f0', borderRadius: 8, borderWidth: 1, borderColor: '#ffb3b3' 
+    backgroundColor: '#fff0f0', borderRadius: 8, borderWidth: 1, borderColor: '#ffb3b3'
   },
-  unvisitedSection: { 
+  unvisitedSection: {
     marginTop: hp(1.5), paddingHorizontal: wp(3), paddingVertical: hp(1),
-    backgroundColor: '#fff8f0', borderRadius: 8, borderWidth: 1, borderColor: '#ffd699' 
+    backgroundColor: '#fff8f0', borderRadius: 8, borderWidth: 1, borderColor: '#ffd699'
   },
-  completedSection: { 
+  completedSection: {
     marginTop: hp(1.5), paddingHorizontal: wp(3), paddingVertical: hp(1),
-    backgroundColor: '#f0fff4', borderRadius: 8, borderWidth: 1, borderColor: '#90ee90' 
+    backgroundColor: '#f0fff4', borderRadius: 8, borderWidth: 1, borderColor: '#90ee90'
   },
-  
+
   statusIndicator: { flexDirection: 'row', alignItems: 'center', gap: wp(2), marginBottom: hp(0.5) },
   statusIndicatorText: { fontSize: 14, fontWeight: '600' },
-  
+
   visitedSubText: { fontSize: 12, color: theme.colors.textLight, fontStyle: 'italic', marginBottom: hp(0.5) },
   visitedPrice: { fontWeight: 'bold', color: theme.colors.primary, fontSize: 14 },
-  countdownText: { fontSize: 12, fontWeight: '600', color: '#2ed573' },
-  
+
   cancelledSubText: { fontSize: 12, color: theme.colors.textLight, fontStyle: 'italic' },
   unvisitedSubText: { fontSize: 12, color: theme.colors.textLight, fontStyle: 'italic' },
-  
+
   completedSubText: { fontSize: 12, color: theme.colors.textLight, fontStyle: 'italic', marginBottom: hp(0.3) },
   completedPrice: { fontWeight: 'bold', color: '#27ae60', fontSize: 14 },
-  
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: theme.colors.text },
-  
-  emptyContainer: { 
-    flex: 1, justifyContent: 'center', alignItems: 'center', 
-    gap: hp(2), paddingHorizontal: wp(8) 
+
+  fullScreenLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+
+  emptyContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    gap: hp(2), paddingHorizontal: wp(8)
   },
   emptyText: { fontSize: 18, fontWeight: '600', color: theme.colors.dark, textAlign: 'center' },
   emptySubText: { fontSize: 14, color: theme.colors.textLight, textAlign: 'center', lineHeight: 20 },

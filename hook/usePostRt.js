@@ -9,28 +9,28 @@ export default function usePostRt(user, limit = 10, own = false) {
     const [hasMore, setHasMore] = useState(true);
     const [notificationCount, setNotificationCount] = useState(0);
     
-    // ✅ Use refs to prevent dependency changes
+    // Use refs to prevent dependency changes
     const postsMapRef = useRef(new Map());
     const userRef = useRef(user);
     const ownRef = useRef(own);
     const limitRef = useRef(limit);
     const channelsRef = useRef([]);
 
-    // ✅ Update refs when props change
+    // Update refs when props change
     useEffect(() => {
         userRef.current = user;
         ownRef.current = own;
         limitRef.current = limit;
     }, [user, own, limit]);
 
-    // ✅ Stable removePostFromState function
+    // Stable removePostFromState function
     const removePostFromState = useCallback((postId) => {
         console.log('🗑️ Removing post from state:', postId);
         postsMapRef.current.delete(postId);
         setPosts(prev => prev.filter(post => post.id !== postId));
     }, []);
 
-    // ✅ Stable getPosts function with refs
+    // Stable getPosts function with refs
     const getPosts = useCallback(async (reset = false) => {
         if (loading || (!hasMore && !reset)) return;
         
@@ -54,7 +54,6 @@ export default function usePostRt(user, limit = 10, own = false) {
                 const newPosts = res.data || [];
                 
                 if (reset) {
-                    console.log(`🔄 [getPosts] Resetting with ${newPosts.length} posts`);
                     postsMapRef.current.clear();
                     newPosts.forEach(post => postsMapRef.current.set(post.id, post));
                     setPosts(newPosts);
@@ -75,9 +74,9 @@ export default function usePostRt(user, limit = 10, own = false) {
         } finally {
             setLoading(false);
         }
-    }, [loading, hasMore, posts.length]); // ✅ Minimal dependencies
+    }, [loading, hasMore, posts.length]); 
 
-    // ✅ Stable event handlers with refs
+    // Stable event handlers with refs
     const handlePostEvent = useCallback(async (payload) => {
         const { eventType, new: newData, old: oldData } = payload;
         console.log(`[POSTS] Received ${eventType} event:`, payload);
@@ -162,7 +161,7 @@ export default function usePostRt(user, limit = 10, own = false) {
         } catch (error) {
             console.error(`[POSTS] Error handling ${eventType} event:`, error);
         }
-    }, []); // ✅ No dependencies
+    }, []);
 
     const handleCommentEvent = useCallback(async (payload) => {
         const { eventType, new: newData, old: oldData } = payload;
@@ -246,11 +245,11 @@ export default function usePostRt(user, limit = 10, own = false) {
         }
     }, []);
 
-    // ✅ Setup realtime subscriptions with proper cleanup
+    // Setup realtime subscriptions with proper cleanup
     useEffect(() => {
         if (!user?.id) return;
-        
-        // ✅ Cleanup existing channels first
+
+        // Cleanup existing channels first
         if (channelsRef.current.length > 0) {
             console.log('🧹 Cleaning up existing channels...');
             channelsRef.current.forEach(channel => {
@@ -261,7 +260,7 @@ export default function usePostRt(user, limit = 10, own = false) {
 
         const channelId = `posts-${user.id}-${own ? 'own' : 'public'}-${Date.now()}`;
 
-        // ✅ Create new channels
+        // Create new channels
         const postsChannel = supabase
             .channel(`${channelId}-posts`)
             .on('postgres_changes', {
@@ -300,15 +299,15 @@ export default function usePostRt(user, limit = 10, own = false) {
             }, handleLikeEvent)
             .subscribe();
 
-        // ✅ Store channels for cleanup
+        // Store channels for cleanup
         channelsRef.current = [postsChannel, commentsChannel, notificationsChannel, likesChannel];
 
-        // ✅ Initial data fetch only once
+        // Initial data fetch only once
         if (posts.length === 0) {
             getPosts(true);
         }
 
-        // ✅ Cleanup function
+        // Cleanup function
         return () => {
             console.log('🧹 Cleaning up realtime channels');
             channelsRef.current.forEach(channel => {
@@ -316,7 +315,7 @@ export default function usePostRt(user, limit = 10, own = false) {
             });
             channelsRef.current = [];
         };
-    }, [user?.id, own]); // ✅ Only depend on user.id and own
+    }, [user?.id, own]); 
 
     return {
         posts,

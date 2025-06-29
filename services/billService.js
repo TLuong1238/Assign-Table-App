@@ -224,7 +224,7 @@ export const checkAndUpdateExpiredBills = async () => {
     const result = await updateExpiredBills();
     
     if (result.success && result.count > 0) {
-      console.log(`✅ Auto-cancelled ${result.count} expired bills`);
+      console.log(` Auto-cancelled ${result.count} expired bills`);
       
       // Alert.alert('Thông báo', `Đã tự động hủy ${result.count} đơn đặt bàn quá hạn`);
     }

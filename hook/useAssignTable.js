@@ -9,6 +9,8 @@ import { createCartDetail } from '../services/cartDetailService';
 const SEARCH_DEBOUNCE_DELAY = 300;
 const MAX_QUANTITY_PER_ITEM = 20;
 const PEOPLE_PER_TABLE = 6;
+// constant for auto-hide message
+const STATUS_MESSAGE_DURATION = 5000; // 5 seconds
 
 export const useAssignTable = (user) => {
   // State management
@@ -51,6 +53,41 @@ export const useAssignTable = (user) => {
 
   const [loading, setLoading] = useState(false);
   const searchTimeoutRef = useRef(null);
+  // ref for status message timeout
+  const statusTimeoutRef = useRef(null);
+
+  // function to show message and auto-hide
+  const showStatusMessage = useCallback((message, duration = STATUS_MESSAGE_DURATION) => {
+    setTableState(prev => ({
+      ...prev,
+      statusMessage: message
+    }));
+    
+    // Clear ofl timeout 
+    if (statusTimeoutRef.current) {
+      clearTimeout(statusTimeoutRef.current);
+    }
+    
+    // Set new timeout
+    statusTimeoutRef.current = setTimeout(() => {
+      setTableState(prev => ({
+        ...prev,
+        statusMessage: ''
+      }));
+    }, duration);
+  }, []);
+
+  // hide message immediately
+  const hideStatusMessage = useCallback(() => {
+    setTableState(prev => ({
+      ...prev,
+      statusMessage: ''
+    }));
+    
+    if (statusTimeoutRef.current) {
+      clearTimeout(statusTimeoutRef.current);
+    }
+  }, []);
 
   // Memoized derived values
   const requiredTables = useMemo(() =>
@@ -338,36 +375,44 @@ export const useAssignTable = (user) => {
     }
   }, [formState.date]);
 
-  // Table selection
+  // Table selection with auto-hide message
   const handleChooseTable = useCallback((item) => {
     if (item.state === 'in_use') return;
 
     const isSelected = tableState.chooseTable.includes(item.id);
 
     if (isSelected) {
+      // remove selected table
       setTableState(prev => ({
         ...prev,
-        chooseTable: prev.chooseTable.filter(id => id !== item.id),
-        statusMessage: ''
+        chooseTable: prev.chooseTable.filter(id => id !== item.id)
       }));
+      
+      const newSelectedCount = tableState.chooseTable.length - 1;
+      if (newSelectedCount === 0) {
+        hideStatusMessage(); // Hide message when no table is selected
+      } else {
+        showStatusMessage(`Đã chọn ${newSelectedCount}/${requiredTables} bàn`);
+      }
       return;
     }
 
     if (tableState.chooseTable.length < requiredTables) {
+      // Choose new table
+      const newSelectedCount = tableState.chooseTable.length + 1;
       setTableState(prev => ({
         ...prev,
-        chooseTable: [...prev.chooseTable, item.id],
-        statusMessage: ''
+        chooseTable: [...prev.chooseTable, item.id]
       }));
+      
+      showStatusMessage(`Đã chọn ${newSelectedCount}/${requiredTables} bàn`);
     } else {
-      setTableState(prev => ({
-        ...prev,
-        statusMessage: `Số người hiện tại chỉ được chọn tối đa ${requiredTables} bàn!`
-      }));
+      // Already enough tables
+      showStatusMessage(`Số người hiện tại chỉ được chọn tối đa ${requiredTables} bàn!`);
     }
-  }, [tableState.chooseTable, requiredTables]);
+  }, [tableState.chooseTable, requiredTables, showStatusMessage, hideStatusMessage]);
 
-  // Auto select tables
+  // Fix Auto select tables with auto-hide message
   const autoSelectTables = useCallback((missingTables) => {
     if (availableTables.length < missingTables) {
       Alert.alert("Lỗi", "Không đủ bàn trống để tự động chọn!");
@@ -389,10 +434,13 @@ export const useAssignTable = (user) => {
 
     setTableState(prev => ({
       ...prev,
-      chooseTable: [...prev.chooseTable, ...selectedTables],
-      statusMessage: `Hệ thống đã tự động chọn thêm ${missingTables} bàn!`
+      chooseTable: [...prev.chooseTable, ...selectedTables]
     }));
-  }, [availableTables, tableState.chooseTable, tableState.tables]);
+    
+    // message and auto-hide
+    const totalSelected = tableState.chooseTable.length + selectedTables.length;
+    showStatusMessage(`Hệ thống đã tự động chọn thêm ${missingTables} bàn! Tổng: ${totalSelected}/${requiredTables} bàn`);
+  }, [availableTables, tableState.chooseTable, tableState.tables, requiredTables, showStatusMessage]);
 
   // Form submission
   const handleAssign = useCallback(async () => {
@@ -439,7 +487,7 @@ export const useAssignTable = (user) => {
         name: formState.name,
         time: formState.time.toISOString(),
         state: "in_order",
-        visit: "visited",
+        visit: "on_process",
         price: cart.cartPrice,
       };
 
@@ -472,8 +520,9 @@ export const useAssignTable = (user) => {
           : ''}`
       );
 
-      // Reset all states
+      // Reset all states and hide message
       setTableState(prev => ({ ...prev, chooseTable: [], statusMessage: '' }));
+      hideStatusMessage(); // Clear timeout
       setFormState(prev => ({
         ...prev,
         name: '',
@@ -498,8 +547,19 @@ export const useAssignTable = (user) => {
     user,
     autoSelectTables,
     clearCart,
-    refreshTableData
+    refreshTableData,
+    hideStatusMessage
   ]);
+
+  // Cleanup timeouts when component unmount
+  const cleanup = useCallback(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    if (statusTimeoutRef.current) {
+      clearTimeout(statusTimeoutRef.current);
+    }
+  }, []);
 
   return {
     // States
@@ -539,5 +599,10 @@ export const useAssignTable = (user) => {
     handleChooseTable,
     autoSelectTables,
     handleAssign,
+
+    // Functions for status message
+    showStatusMessage,
+    hideStatusMessage,
+    cleanup, // Để cleanup timeouts 
   };
 };

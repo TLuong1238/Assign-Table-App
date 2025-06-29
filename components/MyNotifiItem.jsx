@@ -16,16 +16,15 @@ const MyNotifiItem = (
     const createAt = moment(item?.created_at).fromNow();
     const handleNotiClick = () => {
         try {
-            // Kiểm tra item?.data có tồn tại không
             if (!item?.data) {
                 console.log('Notification data is empty');
                 return;
             }
 
-            // Parse JSON và kiểm tra kết quả
+            // Parse JSON 
             const parsedData = JSON.parse(item.data);
 
-            // Kiểm tra nếu kết quả là array
+            // check array or object
             if (Array.isArray(parsedData)) {
                 const [postId, commentId] = parsedData;
                 router.push({
@@ -36,7 +35,7 @@ const MyNotifiItem = (
                     }
                 });
             }
-            // Kiểm tra nếu kết quả là object
+            //result is an object
             else if (typeof parsedData === 'object') {
                 const { postId, commentId } = parsedData;
 

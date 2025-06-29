@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 15,
     alignItems: 'center',
-    width: '48%', // Để vừa 2 cột
+    width: '48%',
     elevation: 2,
 },
     otherImage: {

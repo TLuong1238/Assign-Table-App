@@ -37,7 +37,7 @@ export const updateUserData = async (userId, data) => {
     }
 }
 
-// ✅ Reset password functions
+// Reset password functions
 export const sendPasswordResetEmail = async (email) => {
     try {
         const { error } = await supabase.auth.resetPasswordForEmail(email);

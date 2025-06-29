@@ -21,7 +21,7 @@ import MyHeader from '../../../components/MyHeader';
 
 // Context & Hooks
 import { useAuth } from '../../../context/AuthContext';
-import { usePostRt } from '../../../hook/usePostRt'
+import  usePostRt  from '../../../hook/usePostRt'
 
 // Utils
 import { hp, wp } from '../../../helper/common';
@@ -41,14 +41,11 @@ const UserHeader = memo(({ user, router, handleLogout, handleChangePassword }) =
     <View>
       <MyHeader title="Trang cá nhân" showBackButton={false} />
       
-      {/* ✅ Container cho 2 nút */}
       <View style={styles.buttonContainer}>
-        {/* ✅ Nút đổi mật khẩu */}
         <TouchableOpacity style={styles.changePasswordButton} onPress={handleChangePassword}>
           <Icon.Key strokeWidth={2} width={wp(5)} height={wp(5)} color="#3B82F6" />
         </TouchableOpacity>
         
-        {/* ✅ Nút logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Icon.Power strokeWidth={2} width={wp(5)} height={wp(5)} color="red" />
         </TouchableOpacity>
@@ -92,12 +89,15 @@ const EmptyPosts = memo(() => (
   </View>
 ));
 
+// LoadingFooter
 const LoadingFooter = memo(({ hasMore, loading, postsLength }) => {
   if (!hasMore || !loading) return null;
   
   return (
     <View style={{ marginVertical: postsLength === 0 ? hp(12.5) : hp(3.75) }}>
-      <MyLoading />
+      <MyLoading 
+        text={postsLength === 0 ? "Đang tải bài viết..." : "Đang tải thêm bài viết..."} 
+      />
     </View>
   );
 });
@@ -140,7 +140,6 @@ const ProfileScr = () => {
     );
   }, [setAuth]);
 
-  // ✅ Handler cho đổi mật khẩu
   const handleChangePassword = useCallback(() => {
     Alert.alert(
       "Đổi mật khẩu",
@@ -157,7 +156,6 @@ const ProfileScr = () => {
     );
   }, [router]);
 
-  // ✅ Optimized refresh handler
   const onRefresh = useCallback(async () => {
     if (refreshing) return;
     
@@ -177,7 +175,6 @@ const ProfileScr = () => {
     }
   }, [hasMore, loading, refreshing, getPosts]);
 
-  // ✅ Optimized renderPost với conditional edit
   const renderPost = useCallback(({ item }) => (
     <MyPostCard
       item={item}
@@ -185,7 +182,6 @@ const ProfileScr = () => {
       router={router}
       showDeleteIcon={true}
       onEdit={(item) => {
-        // ✅ Chỉ edit khi state === 'accept'
         if (item.state === 'accept') {
           router.push({
             pathname: 'main/newPostScr',
@@ -199,6 +195,23 @@ const ProfileScr = () => {
 
   const keyExtractor = useCallback((item) => item.id.toString(), []);
 
+  // Loading
+  if (loading && posts.length === 0 && !refreshing) {
+    return (
+      <ScreenWrapper bg="#FFBF00">
+        <UserHeader 
+          user={user} 
+          router={router} 
+          handleLogout={handleLogout}
+          handleChangePassword={handleChangePassword}
+        />
+        <View style={styles.fullScreenLoading}>
+          <MyLoading text="Đang tải hồ sơ..." />
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
   // ===== RENDER =====
   return (
     <ScreenWrapper bg="#FFBF00">
@@ -208,7 +221,7 @@ const ProfileScr = () => {
             user={user} 
             router={router} 
             handleLogout={handleLogout}
-            handleChangePassword={handleChangePassword} // ✅ Pass handler
+            handleChangePassword={handleChangePassword}
           />
         }
         ListHeaderComponentStyle={styles.headerStyle}
@@ -231,7 +244,6 @@ const ProfileScr = () => {
         maxToRenderPerBatch={5}
         windowSize={5}
         initialNumToRender={3}
-        // ✅ Optimized refresh control
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -258,7 +270,6 @@ const styles = StyleSheet.create({
     marginBottom: hp(2.5)
   },
   
-  // ✅ Container cho 2 nút
   buttonContainer: {
     position: 'absolute',
     right: 0,
@@ -267,11 +278,10 @@ const styles = StyleSheet.create({
     gap: wp(2),
   },
   
-  // ✅ Nút đổi mật khẩu
   changePasswordButton: {
     padding: wp(1.25),
     borderRadius: wp(2.5),
-    backgroundColor: "#dbeafe", // Light blue background
+    backgroundColor: "#dbeafe",
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -282,11 +292,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   
-  // ✅ Nút logout
   logoutButton: {
     padding: wp(1.25),
     borderRadius: wp(2.5),
-    backgroundColor: "#fee2e2", // Light red background
+    backgroundColor: "#fee2e2",
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -376,6 +385,13 @@ const styles = StyleSheet.create({
     color: theme.colors.textLight,
     paddingHorizontal: wp(8),
     lineHeight: hp(2.5)
+  },
+  
+  fullScreenLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: hp(10)
   }
 });
 

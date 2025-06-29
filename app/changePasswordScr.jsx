@@ -12,7 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router'
 
 const ChangePasswordScr = () => {
   const router = useRouter();
-  const { email, fromProfile } = useLocalSearchParams(); // ✅ Nhận flag fromProfile
+  const { email, fromProfile } = useLocalSearchParams(); //  flag fromProfile
   const newPasswordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -38,7 +38,7 @@ const ChangePasswordScr = () => {
 
     setLoading(true);
     try {
-      // ✅ Update password
+      // Update password
       const { error } = await supabase.auth.updateUser({
         password: newPassword
       });
@@ -49,21 +49,21 @@ const ChangePasswordScr = () => {
         return;
       }
 
-      // ✅ Success - handle different flows
+      // Success - handle different flows
       if (fromProfile === 'true') {
-        // ✅ Từ profile - về profile screen
+        // profile - về profile screen
         Alert.alert(
           'Thành công!',
           'Mật khẩu đã được cập nhật thành công!',
           [
             {
               text: 'OK',
-              onPress: () => router.back() // ✅ Quay về profile
+              onPress: () => router.back() 
             }
           ]
         );
       } else {
-        // ✅ Từ forgot password - sign out và về login
+        //forgot password - sign out - login
         await supabase.auth.signOut();
         Alert.alert(
           'Thành công!',
@@ -144,7 +144,6 @@ const ChangePasswordScr = () => {
 
 export default ChangePasswordScr;
 
-// ✅ Styles remain the same...
 const styles = StyleSheet.create({
   container: {
     flex: 1,

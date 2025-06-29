@@ -1,6 +1,4 @@
-import { View, Text } from 'react-native'
-import React from 'react'
-import { Slot, Tabs } from 'expo-router'
+import { Tabs } from 'expo-router'
 import { theme } from '../../../constants/theme'
 import { hp } from '../../../helper/common'
 import Feather from '@expo/vector-icons/Feather';
@@ -12,11 +10,11 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, 
-        tabBarShowLabel: false,  
+        headerShown: false,
+        tabBarShowLabel: false,
         tabBarActiveTintColor: '#FFBF00',
         tabBarInactiveTintColor: theme.colors.textLight,
-        
+
 
         tabBarStyle: {
           height: hp(5),
@@ -25,7 +23,7 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* Tab Trang chủ */}
+      {/*Home*/}
       <Tabs.Screen
         name="index"
         options={{
@@ -35,7 +33,7 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {/* Mạng */}
+      {/* Social */}
       <Tabs.Screen
         name="socialScr"
         options={{

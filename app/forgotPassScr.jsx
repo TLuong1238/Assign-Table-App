@@ -21,10 +21,10 @@ const ForgotPassScr = () => {
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
 
-  // Refs cho các input OTP
+  // Refs input OTP
   const inputRefs = useRef([]);
 
-  // ✅ Countdown timer
+  // Countdown timer
   useEffect(() => {
     if (step === 2 && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
@@ -39,7 +39,7 @@ const ForgotPassScr = () => {
     return emailRegex.test(email);
   };
 
-  // ✅ Step 1: Send reset email
+  // Step 1: Send reset email
   const sendResetEmail = async () => {
     if (!emailRef.current) {
       Alert.alert('Thông báo', 'Vui lòng nhập email!');
@@ -75,7 +75,7 @@ const ForgotPassScr = () => {
     setLoading(false);
   };
 
-  // ✅ Handle OTP input
+  //Handle OTP input
   const handleOtpChange = (value, index) => {
     if (value.length > 1) return;
 
@@ -89,20 +89,20 @@ const ForgotPassScr = () => {
     }
   };
 
-  // ✅ Handle backspace
+  // Handle backspace
   const handleKeyPress = (e, index) => {
     if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  // ✅ Step 2: Verify OTP và redirect
+  // Step 2: Verify OTP và redirect
   const verifyOtp = async () => {
     const otpCode = otp.join('');
 
     if (otpCode.length !== 6) {
       Alert.alert('Thông báo', 'Vui lòng nhập đầy đủ 6 chữ số!');
-      return; // ✅ Dừng ngay, không set loading
+      return; // stop
     }
 
     setLoading(true);
@@ -117,11 +117,11 @@ const ForgotPassScr = () => {
         Alert.alert('Lỗi', 'Mã xác nhận không đúng hoặc đã hết hạn!');
         setOtp(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
-        setLoading(false); // ✅ Dừng loading để user nhập lại
+        setLoading(false); // 
         return;
       }
 
-      // ✅ Success - redirect sang màn hình đổi mật khẩu
+      //  Success - redirect to change password screen
       Alert.alert(
         'Thành công!', 
         'Mã xác nhận đúng! Chuyển sang tạo mật khẩu mới.', 
@@ -145,7 +145,7 @@ const ForgotPassScr = () => {
     setLoading(false);
   };
 
-  // ✅ Resend OTP
+  // Resend OTP
   const resendCode = async () => {
     if (!canResend) return;
 
@@ -168,7 +168,7 @@ const ForgotPassScr = () => {
     setLoading(false);
   };
 
-  // ✅ Step 1: Email input
+  // Step 1: Email input
   const renderEmailStep = () => (
     <View style={styles.content}>
       <View style={styles.header}>
@@ -209,7 +209,7 @@ const ForgotPassScr = () => {
     </View>
   );
 
-  // ✅ Step 2: OTP input
+  // Step 2: OTP input
   const renderOtpStep = () => (
     <View style={styles.content}>
       <View style={styles.header}>
@@ -221,7 +221,7 @@ const ForgotPassScr = () => {
         <Text style={styles.email}>{userEmail}</Text>
       </View>
 
-      {/* ✅ OTP Input */}
+      {/* OTP Input */}
       <View style={styles.otpContainer}>
         {otp.map((digit, index) => (
           <TextInput
@@ -281,7 +281,6 @@ const ForgotPassScr = () => {
       >
         <BackButton />
         
-        {/* ✅ Step indicator - chỉ 2 steps */}
         <View style={styles.stepIndicator}>
           <Text style={styles.stepText}>
             Bước {step} / 2: {

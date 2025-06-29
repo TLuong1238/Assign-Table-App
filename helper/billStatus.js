@@ -1,6 +1,6 @@
 import { theme } from '../constants/theme';
 
-// ✅ Constants cho trạng thái
+//Constants for bill status
 export const BILL_STATUS = {
   WAITING: 'waiting',           // in_order + on_process
   USING: 'using',              // in_order + visited  
@@ -9,7 +9,7 @@ export const BILL_STATUS = {
   SYSTEM_CANCELLED: 'system_cancelled' // cancelled + unvisited
 };
 
-// ✅ Main function - get status từ state + visit
+// Main function - get status from state + visit
 export const getBillStatus = (state, visit) => {
   if (state === 'in_order') {
     return visit === 'visited' ? BILL_STATUS.USING : BILL_STATUS.WAITING;
@@ -20,7 +20,7 @@ export const getBillStatus = (state, visit) => {
   return state === 'completed' ? BILL_STATUS.COMPLETED : BILL_STATUS.WAITING;
 };
 
-// ✅ Status config object (tối ưu - all in one)
+// Status config object 
 const STATUS_CONFIG = {
   [BILL_STATUS.WAITING]: {
     text: 'Đang đặt',
@@ -54,7 +54,7 @@ const STATUS_CONFIG = {
   }
 };
 
-// ✅ Get functions - optimized
+// Get functions - optimized
 export const getStatusColor = (state, visit) => {
   const status = getBillStatus(state, visit);
   return STATUS_CONFIG[status]?.color || theme.colors.textLight;
@@ -70,7 +70,7 @@ export const getStatusStyle = (state, visit) => {
   return STATUS_CONFIG[status] || STATUS_CONFIG[BILL_STATUS.WAITING];
 };
 
-// ✅ Helper functions
+// Helper functions
 export const canCancel = (state, visit) => getBillStatus(state, visit) === BILL_STATUS.WAITING;
 export const canCheckIn = (state, visit) => getBillStatus(state, visit) === BILL_STATUS.WAITING;
 export const isActive = (state, visit) => [BILL_STATUS.WAITING, BILL_STATUS.USING].includes(getBillStatus(state, visit));

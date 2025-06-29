@@ -3,7 +3,7 @@ import { uploadFile } from "./imageService";
 
 export const createOrUpdatePost = async (post) => {
    try {
-      // ✅ Thêm state mặc định là 'wait'
+      //  Add default state as 'wait'
       post.state = 'wait';
       
       //upload images
@@ -81,7 +81,7 @@ export const fetchPosts = async (limit = 15, userId, offset = 0) => {
                likes (*),
                comments (count)
                `)
-            .eq('state', 'accept') // ✅ Chỉ lấy posts đã được duyệt
+            .eq('state', 'accept') // fetch only accepted posts
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
 

@@ -9,22 +9,52 @@ const MyTableItem = ({
     tableClick,
     isSelected = false
 }) => {
-    // Đổi màu icon và nền khi được chọn hoặc đang sử dụng
-    let bgColor = 'white';
-    let iconColor = 'gray';
-    if (item.state === 'reserved' || item.state === 'occupied') {
-        bgColor = '#ffd6d6';
-        iconColor = 'red';
-    } else if (isSelected) {
-        bgColor = '#b6fcb6';
-        iconColor = 'green';
-    }
+    const getTableColors = () => {
+        if (isSelected) {
+            return {
+                bgColor: '#d4edda',
+                iconColor: '#28a745',
+                borderColor: '#28a745'
+            };
+        }
+        
+        switch (item.state) {
+            case 'reserved':
+            case 'occupied':
+            case 'in_use':
+                return {
+                    bgColor: '#f8d7da',
+                    iconColor: '#dc3545',
+                    borderColor: '#dc3545'
+                };
+            default:
+                return {
+                    bgColor: '#ffffff',
+                    iconColor: '#6c757d',
+                    borderColor: '#dee2e6'
+                };
+        }
+    };
+
+    const { bgColor, iconColor, borderColor } = getTableColors();
+    
+    const isDisabled = item.state === 'reserved' || 
+                      item.state === 'occupied' || 
+                      item.state === 'in_use'; 
 
     return (
         <TouchableOpacity
-            style={[styles.container, { backgroundColor: bgColor, borderColor: isSelected ? 'green' : '#eee', borderWidth: 2 }]}
+            style={[
+                styles.container, 
+                { 
+                    backgroundColor: bgColor, 
+                    borderColor: borderColor, 
+                    borderWidth: 2,
+                    opacity: isDisabled ? 0.6 : 1
+                }
+            ]}
             onPress={tableClick}
-            disabled={item.state === 'reserved' || item.state === 'occupied'}
+            disabled={isDisabled}
             activeOpacity={0.7}
         >
             <MaterialIcons name="table-bar" size={60} color={iconColor} />
@@ -44,6 +74,14 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         minHeight: 90,
         minWidth: 90,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     tableNumber: {
         position: 'absolute',

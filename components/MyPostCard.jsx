@@ -60,7 +60,7 @@ const MyPostCard = ({
     // ===== STATE & COMPUTED VALUES =====
     const canInteract = item?.state === POST_STATES.ACCEPT;
     const isOwnPost = item?.userId === currentUser?.id;
-    const canEdit = isOwnPost && item?.state === POST_STATES.ACCEPT; // ✅ Chỉ edit được khi ACCEPT
+    const canEdit = isOwnPost && item?.state === POST_STATES.ACCEPT; // edit when accepted
     const createAt = moment(item?.created_at).fromNow();
 
     const [likeCount, setLikeCount] = useState(0);
@@ -208,7 +208,7 @@ const MyPostCard = ({
 
             {/* Actions */}
             <View style={styles.headerActions}>
-                {/* More Icon - chỉ cho posts accept */}
+                {/* More Icon */}
                 {showMoreIcon && canInteract && (
                     <TouchableOpacity onPress={openPostDetails} style={styles.actionButton}>
                         <Icon.MoreHorizontal stroke={theme.colors.dark} height={hp(3)} width={hp(3)} />
@@ -218,7 +218,7 @@ const MyPostCard = ({
                 {/* Owner Actions */}
                 {showDeleteIcon && isOwnPost && (
                     <View style={styles.ownerActions}>
-                        {/* ✅ Edit chỉ hiện khi ACCEPT */}
+                        {/* Edit when accepted */}
                         {canEdit && (
                             <TouchableOpacity 
                                 onPress={() => onEdit(item)} 
@@ -229,7 +229,7 @@ const MyPostCard = ({
                             </TouchableOpacity>
                         )}
                         
-                        {/* Delete luôn hiện cho owner */}
+                        {/* Delete luôn hiện cho owner
                         <TouchableOpacity 
                             onPress={handlePostDelete} 
                             style={styles.actionButton}
@@ -240,7 +240,7 @@ const MyPostCard = ({
                             ) : (
                                 <Icon.Trash2 stroke={'red'} height={hp(3)} width={hp(3)} />
                             )}
-                        </TouchableOpacity>
+                        </TouchableOpacity> */}
                     </View>
                 )}
             </View>
@@ -318,7 +318,6 @@ const MyPostCard = ({
                 {/* Owner Actions for disabled posts */}
                 {isOwnPost && (
                     <View style={styles.ownerActionsFooter}>
-                        {/* ✅ Edit chỉ hiện khi ACCEPT (nhưng ở đây không bao giờ ACCEPT) */}
                         {canEdit && (
                             <TouchableOpacity 
                                 style={styles.ownerActionButton}
