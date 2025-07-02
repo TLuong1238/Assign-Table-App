@@ -38,6 +38,9 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Feather from '@expo/vector-icons/Feather';
 import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
 import ProductItem from '../../components/ProductItem';
+//
+import VNPayWebView from '../../components/VNPayWebView';
+import { formatCurrency } from '../../constants/paymentConfig';
 
 // Constants
 const FLATLIST_CONFIG = {
@@ -57,7 +60,17 @@ const AssignTableScr = () => {
     setFormState, setModalState,
     fetchProductsData, refreshTableData, handleSearch, clearSearch,
     handleCategoryChange, addToCart, updateCartItemQuantity, getCartItemQuantity,
-    clearCart, handleDateChange, handleTimeChange, handleChooseTable, handleAssign
+    clearCart, handleDateChange, handleTimeChange, handleChooseTable, handleAssign,
+    showWebView,
+    vnpayUrl,
+    currentPayment,
+    paymentState,
+    vnpayLoading,
+    handlePaymentMethodSelect,
+    handleVNPaySuccess,
+    handleVNPayFailure,
+    closeWebView,
+    setPaymentState
   } = useAssignTable(user);
 
   // Render functions
@@ -249,8 +262,11 @@ const AssignTableScr = () => {
         {/* Submit Button */}
         <View style={styles.buttonContainer}>
           <MyButton
-            title={cart.cartPrice > 0 ? `Đặt bàn (${cart.cartPrice.toLocaleString()}đ)` : "Đặt bàn"}
-            loading={loading}
+            title={cart.cartPrice > 0
+              ? `Chọn thanh toán (${cart.cartPrice.toLocaleString()}đ)`
+              : "Đặt bàn"
+            }
+            loading={loading || vnpayLoading}
             onPress={handleAssign}
             style={styles.submitButton}
           />
@@ -296,6 +312,14 @@ const AssignTableScr = () => {
                   onPress={() => handleCategoryChange('all')}
                   styles={styles}
                 />
+
+                <CategoryTab
+                  category={{ name: '⭐ Món ưa thích' }}
+                  isSelected={productState.selectedCategory === 'favorite'}
+                  onPress={() => handleCategoryChange('favorite')}
+                  styles={styles}
+                />
+
                 {productState.categories.map((category) => (
                   <CategoryTab
                     key={category.id}
@@ -391,6 +415,147 @@ const AssignTableScr = () => {
             )}
           </View>
         </Modal>
+        <Modal
+          visible={paymentState.showPaymentModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>💳 Chọn phương thức thanh toán</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setPaymentState(prev => ({ ...prev, showPaymentModal: false }))}
+              >
+                <Icon.X stroke="#666" strokeWidth={2} width={wp(6)} height={wp(6)} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.paymentContent}>
+              {/* Order Summary */}
+              <View style={styles.orderSummary}>
+                <Text style={styles.summaryTitle}>📋 Tóm tắt đơn hàng</Text>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>👤 Khách hàng:</Text>
+                  <Text style={styles.summaryValue}>{formState.name}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>📞 Điện thoại:</Text>
+                  <Text style={styles.summaryValue}>{formState.phone}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>👥 Số người:</Text>
+                  <Text style={styles.summaryValue}>{formState.peopleCount} người</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>🪑 Số bàn:</Text>
+                  <Text style={styles.summaryValue}>{tableState.chooseTable.length} bàn</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>🍽️ Món ăn:</Text>
+                  <Text style={styles.summaryValue}>{cart.details.length} món</Text>
+                </View>
+                <View style={[styles.summaryRow, styles.totalRow]}>
+                  <Text style={styles.summaryLabel}>💰 Tổng tiền:</Text>
+                  <Text style={styles.totalValue}>{formatCurrency(paymentState.totalAmount)}đ</Text>
+                </View>
+              </View>
+
+              {/* Payment Options */}
+              <View style={styles.paymentOptions}>
+                <Text style={styles.optionsTitle}>Chọn phương thức thanh toán:</Text>
+
+                {/* VNPay Deposit */}
+                <TouchableOpacity
+                  style={styles.paymentOption}
+                  onPress={() => handlePaymentMethodSelect('deposit_vnpay')}
+                >
+                  <View style={styles.optionLeft}>
+                    <View style={[styles.optionIcon, { backgroundColor: '#007AFF' }]}>
+                      <Text style={styles.optionIconText}>💳</Text>
+                    </View>
+                    <View style={styles.optionInfo}>
+                      <Text style={styles.optionTitle}>Cọc qua VNPay</Text>
+                      <Text style={styles.optionDesc}>
+                        Thanh toán cọc {formatCurrency(paymentState.depositAmount)}đ
+                      </Text>
+                      <Text style={styles.optionNote}>
+                        Còn lại {formatCurrency(paymentState.totalAmount - paymentState.depositAmount)}đ thanh toán tại quầy
+                      </Text>
+                    </View>
+                  </View>
+                  <Icon.ChevronRight width={20} height={20} color="#666" />
+                </TouchableOpacity>
+
+                {/* VNPay Full */}
+                <TouchableOpacity
+                  style={styles.paymentOption}
+                  onPress={() => handlePaymentMethodSelect('full_vnpay')}
+                >
+                  <View style={styles.optionLeft}>
+                    <View style={[styles.optionIcon, { backgroundColor: '#FF6B6B' }]}>
+                      <Text style={styles.optionIconText}>💎</Text>
+                    </View>
+                    <View style={styles.optionInfo}>
+                      <Text style={styles.optionTitle}>Thanh toán đầy đủ</Text>
+                      <Text style={styles.optionDesc}>
+                        Thanh toán toàn bộ {formatCurrency(paymentState.totalAmount)}đ
+                      </Text>
+                      <Text style={styles.optionNote}>
+                        Không cần thanh toán thêm tại quầy
+                      </Text>
+                    </View>
+                  </View>
+                  <Icon.ChevronRight width={20} height={20} color="#666" />
+                </TouchableOpacity>
+
+                {/* Counter Payment */}
+                <TouchableOpacity
+                  style={styles.paymentOption}
+                  onPress={() => handlePaymentMethodSelect('counter')}
+                >
+                  <View style={styles.optionLeft}>
+                    <View style={[styles.optionIcon, { backgroundColor: '#4ECDC4' }]}>
+                      <Text style={styles.optionIconText}>🏪</Text>
+                    </View>
+                    <View style={styles.optionInfo}>
+                      <Text style={styles.optionTitle}>Thanh toán tại quầy</Text>
+                      <Text style={styles.optionDesc}>
+                        Thanh toán {formatCurrency(paymentState.totalAmount)}đ khi đến nhà hàng
+                      </Text>
+                      <Text style={styles.optionNote}>
+                        Tiền mặt hoặc chuyển khoản
+                      </Text>
+                    </View>
+                  </View>
+                  <Icon.ChevronRight width={20} height={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              {/* VNPay Info */}
+              <View style={styles.vnpayInfo}>
+                <Text style={styles.vnpayInfoTitle}>🛡️ Thanh toán an toàn với VNPay</Text>
+                <Text style={styles.vnpayInfoText}>
+                  • Hỗ trợ 50+ ngân hàng trong nước{'\n'}
+                  • Bảo mật SSL 256-bit{'\n'}
+                  • Xử lý tức thời, hoàn tiền tự động{'\n'}
+                  • Hỗ trợ 24/7
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+
+        {/* VNPay WebView */}
+        <VNPayWebView
+          visible={showWebView}
+          onClose={closeWebView}
+          vnpayUrl={vnpayUrl}
+          onPaymentSuccess={handleVNPaySuccess}
+          onPaymentFailure={handleVNPayFailure}
+          orderInfo={currentPayment?.orderInfo}
+          amount={currentPayment?.amount}
+        />
       </View>
     </ScreenWrapper>
   );
@@ -604,4 +769,126 @@ const styles = StyleSheet.create({
   emptyCart: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: hp(2), paddingHorizontal: wp(8), backgroundColor: '#fafbfc' },
   emptyCartText: { fontSize: wp(5.5), fontWeight: '600', color: theme.colors.dark },
   emptyCartSubText: { fontSize: wp(4), color: theme.colors.textLight, textAlign: 'center', lineHeight: wp(6) },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'white',
+  },
+  paymentContent: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  orderSummary: {
+    backgroundColor: 'white',
+    margin: wp(4),
+    padding: wp(4),
+    borderRadius: wp(3),
+    elevation: 2,
+  },
+  summaryTitle: {
+    fontSize: wp(4.5),
+    fontWeight: 'bold',
+    color: theme.colors.dark,
+    marginBottom: hp(1.5),
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: hp(0.8),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryLabel: {
+    fontSize: wp(3.8),
+    color: theme.colors.textLight,
+  },
+  summaryValue: {
+    fontSize: wp(3.8),
+    color: theme.colors.dark,
+    fontWeight: '500',
+  },
+  totalValue: {
+    fontSize: wp(4.5),
+    color: theme.colors.primary,
+    fontWeight: 'bold',
+  },
+  paymentOptions: {
+    backgroundColor: 'white',
+    margin: wp(4),
+    padding: wp(4),
+    borderRadius: wp(3),
+    elevation: 2,
+  },
+  optionsTitle: {
+    fontSize: wp(4.5),
+    fontWeight: 'bold',
+    color: theme.colors.dark,
+    marginBottom: hp(2),
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: hp(2),
+    paddingHorizontal: wp(3),
+    backgroundColor: '#f8f9fa',
+    borderRadius: wp(2),
+    marginBottom: hp(1.5),
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  optionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  optionIcon: {
+    width: wp(12),
+    height: wp(12),
+    borderRadius: wp(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: wp(3),
+  },
+  optionIconText: {
+    fontSize: wp(6),
+  },
+  optionInfo: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: wp(4.2),
+    fontWeight: 'bold',
+    color: theme.colors.dark,
+  },
+  optionDesc: {
+    fontSize: wp(3.5),
+    color: theme.colors.primary,
+    fontWeight: '600',
+    marginTop: hp(0.3),
+  },
+  optionNote: {
+    fontSize: wp(3),
+    color: theme.colors.textLight,
+    marginTop: hp(0.3),
+  },
+  vnpayInfo: {
+    backgroundColor: '#e8f5e8',
+    margin: wp(4),
+    padding: wp(4),
+    borderRadius: wp(3),
+    borderLeftWidth: 4,
+    borderLeftColor: '#27ae60',
+  },
+  vnpayInfoTitle: {
+    fontSize: wp(3.8),
+    fontWeight: 'bold',
+    color: '#27ae60',
+    marginBottom: hp(1),
+  },
+  vnpayInfoText: {
+    fontSize: wp(3.5),
+    color: '#2d3436',
+    lineHeight: hp(2.5),
+  },
 });

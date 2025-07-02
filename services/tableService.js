@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase' // ✅ GIỮ NGUYÊN IMPORT PATH NẾU ĐÚNG
 
 export const fetchTable = async () => {
     try {
@@ -8,20 +8,17 @@ export const fetchTable = async () => {
 
         // console.log('fetchTable data: ', data);
 
-
         if (error) {
             return { success: false, msg: error?.message };
         }
         return { success: true, data };
 
-
     } catch (error) {
         console.error('Error fetching table data:', error);
-        return { succes: false, msg: error.message };
+        return { success: false, msg: error.message }; // ✅ SỬA: succes -> success
     }
-
-
 }
+
 export const updateTableState = async (tableId, state) => {
     try {
         const { data, error } = await supabase

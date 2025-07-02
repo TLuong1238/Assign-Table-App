@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { createCartDetail } from './cartDetailService';
 
 export const createBill = async (bill) => {
     try {
@@ -41,7 +42,6 @@ export const fetchBill = async () => {
     }
 }
 
-
 export const fetchBillByTimeRange = async (time) => {
     try {
         const targetDateTime = new Date(time);
@@ -67,6 +67,7 @@ export const fetchBillByTimeRange = async (time) => {
         return { success: false, msg: 'Có lỗi xảy ra khi lấy dữ liệu đặt bàn' };
     }
 };
+
 // detail
 export const fetchDetailByBillIds = async (billIds) => {
     try {
@@ -85,6 +86,7 @@ export const fetchDetailByBillIds = async (billIds) => {
         return { success: false, msg: 'Có lỗi xảy ra khi lấy chi tiết bill' };
     }
 };
+
 export const createDetail = async (billId, tableIds, peopleCount) => {
     try {
         let details = [];
@@ -124,6 +126,7 @@ export const createDetail = async (billId, tableIds, peopleCount) => {
         return { success: false, msg: 'Có lỗi xảy ra khi tạo chi tiết bill' };
     }
 };
+
 export const fetchBillByUser = async (userId) => {
     try {
         const { data, error } = await supabase
@@ -142,98 +145,218 @@ export const fetchBillByUser = async (userId) => {
         return { success: false, msg: 'Có lỗi xảy ra khi lấy bill của user' };
     }
 };
-export const updateBill = async (billId, updateData) => {
-  try {
-    const { data, error } = await supabase
-      .from('bills')
-      .update(updateData)
-      .eq('id', billId)
-      .select();
 
-    if (error) {
-      console.log('updateBill error: ', error);
-      return { success: false, msg: 'Không thể cập nhật bill' };
+export const updateBill = async (billId, updateData) => {
+    try {
+        const { data, error } = await supabase
+            .from('bills')
+            .update(updateData)
+            .eq('id', billId)
+            .select();
+
+        if (error) {
+            console.log('updateBill error: ', error);
+            return { success: false, msg: 'Không thể cập nhật bill' };
+        }
+        return { success: true, data };
+    } catch (error) {
+        console.log('updateBill error: ', error);
+        return { success: false, msg: 'Có lỗi xảy ra khi cập nhật bill' };
     }
-    return { success: true, data };
-  } catch (error) {
-    console.log('updateBill error: ', error);
-    return { success: false, msg: 'Có lỗi xảy ra khi cập nhật bill' };
-  }
 };
+
 //updateBills expired
 export const updateExpiredBills = async () => {
-  try {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-    
-    console.log('Checking for expired bills before:', today.toISOString());
+    try {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        
+        console.log('Checking for expired bills before:', today.toISOString());
 
-    const { data: expiredBills, error: fetchError } = await supabase
-      .from('bills')
-      .select('*')
-      .eq('state', 'in_order')
-      .lt('time', today.toISOString());
+        const { data: expiredBills, error: fetchError } = await supabase
+            .from('bills')
+            .select('*')
+            .eq('state', 'in_order')
+            .lt('time', today.toISOString());
 
-    if (fetchError) {
-      console.error('Error fetching expired bills:', fetchError);
-      return { success: false, msg: fetchError.message };
+        if (fetchError) {
+            console.error('Error fetching expired bills:', fetchError);
+            return { success: false, msg: fetchError.message };
+        }
+
+        if (!expiredBills || expiredBills.length === 0) {
+            console.log('No expired bills found');
+            return { success: true, data: [] };
+        }
+
+        console.log(`Found ${expiredBills.length} expired bills:`, expiredBills);
+
+        const billIds = expiredBills.map(bill => bill.id);
+        
+        const { data: updatedBills, error: updateError } = await supabase
+            .from('bills')
+            .update({
+                state: 'cancelled',
+                visit: 'not_visited',
+                updated_at: new Date().toISOString()
+            })
+            .in('id', billIds)
+            .select();
+
+        if (updateError) {
+            console.error('Error updating expired bills:', updateError);
+            return { success: false, msg: updateError.message };
+        }
+
+        console.log(`Successfully updated ${updatedBills.length} expired bills`);
+        
+        return { 
+            success: true, 
+            data: updatedBills,
+            count: updatedBills.length 
+        };
+
+    } catch (error) {
+        console.error('Error in updateExpiredBills:', error);
+        return { success: false, msg: error.message };
     }
-
-    if (!expiredBills || expiredBills.length === 0) {
-      console.log('No expired bills found');
-      return { success: true, data: [] };
-    }
-
-    console.log(`Found ${expiredBills.length} expired bills:`, expiredBills);
-
-    const billIds = expiredBills.map(bill => bill.id);
-    
-    const { data: updatedBills, error: updateError } = await supabase
-      .from('bills')
-      .update({
-        state: 'cancelled',
-        visit: 'not_visited',
-        updated_at: new Date().toISOString()
-      })
-      .in('id', billIds)
-      .select();
-
-    if (updateError) {
-      console.error('Error updating expired bills:', updateError);
-      return { success: false, msg: updateError.message };
-    }
-
-    console.log(`Successfully updated ${updatedBills.length} expired bills`);
-    
-    return { 
-      success: true, 
-      data: updatedBills,
-      count: updatedBills.length 
-    };
-
-  } catch (error) {
-    console.error('Error in updateExpiredBills:', error);
-    return { success: false, msg: error.message };
-  }
 };
 
 export const checkAndUpdateExpiredBills = async () => {
-  try {
-    console.log('=== STARTING EXPIRED BILLS CHECK ===');
-    
-    const result = await updateExpiredBills();
-    
-    if (result.success && result.count > 0) {
-      console.log(` Auto-cancelled ${result.count} expired bills`);
-      
-      // Alert.alert('Thông báo', `Đã tự động hủy ${result.count} đơn đặt bàn quá hạn`);
+    try {
+        console.log('=== STARTING EXPIRED BILLS CHECK ===');
+        
+        const result = await updateExpiredBills();
+        
+        if (result.success && result.count > 0) {
+            console.log(` Auto-cancelled ${result.count} expired bills`);
+            
+            // Alert.alert('Thông báo', `Đã tự động hủy ${result.count} đơn đặt bàn quá hạn`);
+        }
+        
+        console.log('=== EXPIRED BILLS CHECK COMPLETED ===');
+        return result;
+        
+    } catch (error) {
+        console.error('Error in checkAndUpdateExpiredBills:', error);
+        return { success: false, msg: error.message };
     }
-    
-    console.log('=== EXPIRED BILLS CHECK COMPLETED ===');
-    return result;
-    
-  } catch (error) {
-    console.error('Error in checkAndUpdateExpiredBills:', error);
-    return { success: false, msg: error.message };
-  }
+};
+
+// ✅ THÊM FUNCTION TẠO BILL TỪ PAYMENT DATA
+export const createBillFromPayment = async (payment) => {
+    try {
+        console.log('Creating bill from payment:', payment.id);
+
+        const billData = payment.bill_data;
+        if (!billData) {
+            throw new Error('No bill data found in payment');
+        }
+
+        // ✅ 1. TẠO BILL RECORD - THEO ĐÚNG SCHEMA
+        const billInsertData = {
+            userId: payment.userid,                                    // ✅ uuid
+            name: billData.name,                                       // ✅ text NOT NULL
+            phone: billData.phone,                                     // ✅ text NOT NULL  
+            time: billData.time,                                       // ✅ timestamp
+            num_people: billData.peopleCount || billData.num_people || 1, // ✅ numeric NOT NULL
+            note: billData.note || '',                                 // ✅ text
+            price: billData.totalAmount || billData.price || payment.amount, // ✅ numeric
+            
+            // ✅ Payment fields theo schema
+            payment_status: payment.payment_type === 'deposit' ? 'deposit_paid' : 'fully_paid', // ✅ CHECK constraint
+            payment_method: 'vnpay',                                   // ✅ CHECK constraint
+            deposit_amount: payment.payment_type === 'deposit' ? payment.amount : 0, // ✅ numeric
+            total_amount: billData.totalAmount || billData.price || payment.amount,   // ✅ numeric
+            payment_id: payment.id.toString(),                         // ✅ text
+            
+            // ✅ Default values theo schema
+            state: 'in_order',                                         // ✅ CHECK constraint
+            visit: 'on_process',                                       // ✅ default value
+            created_at: new Date().toISOString(),                      // ✅ timestamp
+            updated_at: new Date().toISOString()                       // ✅ timestamp
+        };
+
+        console.log('Creating bill with data:', billInsertData);
+
+        // ✅ TẠO BILL
+        const billResult = await createBill(billInsertData);
+        
+        if (!billResult.success) {
+            throw new Error(billResult.msg);
+        }
+
+        const bill = billResult.data[0];
+        console.log('✅ Bill created successfully:', bill);
+
+        // ✅ 2. TẠO DETAIL BILLS (CHO tableIds)
+        if (billData.tableIds && billData.tableIds.length > 0) {
+            console.log('Creating detail bills for tables:', billData.tableIds);
+            
+            const detailResult = await createDetail(
+                bill.id, 
+                billData.tableIds, 
+                billData.peopleCount || billData.num_people || 1
+            );
+            
+            if (!detailResult.success) {
+                console.error('Create detail bills failed:', detailResult.msg);
+            } else {
+                console.log('✅ Detail bills created successfully:', detailResult.data);
+            }
+        }
+
+        // ✅ 3. TẠO CART DETAILS (CHO cartDetails)
+        if (billData.cartDetails && billData.cartDetails.length > 0) {
+            console.log('Creating cart details:', billData.cartDetails);
+            
+            const cartResult = await createCartDetail(bill.id, billData.cartDetails);
+            
+            if (!cartResult.success) {
+                console.error('Create cart details failed:', cartResult.msg);
+            } else {
+                console.log('✅ Cart details created successfully:', cartResult.data);
+                
+                // ✅ Cập nhật lại tổng tiền bill sau khi tạo cart details
+                const cartTotal = billData.cartDetails.reduce((sum, item) => 
+                    sum + (item.price * item.num), 0
+                );
+                
+                if (cartTotal > 0) {
+                    await updateBill(bill.id, { price: cartTotal });
+                    console.log('✅ Bill price updated with cart total:', cartTotal);
+                }
+            }
+        }
+
+        // ✅ 4. CẬP NHẬT PAYMENT VỚI BILL ID
+        const { error: updatePaymentError } = await supabase
+            .from('payments')
+            .update({ billid: bill.id })                               // ✅ integer foreign key
+            .eq('id', payment.id);
+
+        if (updatePaymentError) {
+            console.error('Update payment with bill_id error:', updatePaymentError);
+            // Không throw error vì bill đã tạo thành công
+        }
+
+        console.log('✅ Bill creation completed successfully:', {
+            billId: bill.id,
+            paymentId: payment.id,
+            hasTableDetails: !!(billData.tableIds && billData.tableIds.length > 0),
+            hasCartDetails: !!(billData.cartDetails && billData.cartDetails.length > 0)
+        });
+
+        return { 
+            success: true, 
+            data: bill 
+        };
+
+    } catch (error) {
+        console.error('Create bill from payment error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Failed to create bill'
+        };
+    }
 };

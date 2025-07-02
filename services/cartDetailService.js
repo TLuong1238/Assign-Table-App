@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // ✅ GIỮ NGUYÊN IMPORT PATH NẾU ĐÚNG
 
 //  cart detail for bill
 export const createCartDetail = async (billId, cartDetails) => {
@@ -14,12 +14,12 @@ export const createCartDetail = async (billId, cartDetails) => {
       };
     }
 
-    // Prepare data for insertion
+    // ✅ Prepare data for insertion - THEO SCHEMA
     const detailsToInsert = cartDetails.map(detail => ({
-      billId: billId,
-      productId: detail.productId,
-      num: detail.num,
-      price: detail.price * detail.num // Tính tổng tiền cho mỗi item
+      billId: billId,                                          // ✅ bigint foreign key
+      productId: detail.productId,                             // ✅ bigint foreign key
+      num: detail.num,                                         // ✅ numeric
+      price: detail.price * detail.num                         // ✅ numeric (tổng tiền cho item)
     }));
 
     console.log('Details to insert:', detailsToInsert);
@@ -72,7 +72,7 @@ export const updateBillPrice = async (billId, totalPrice) => {
       .from('bills')
       .update({ 
         price: totalPrice,
-        
+        updated_at: new Date().toISOString()                   // ✅ THÊM updated_at theo schema
       })
       .eq('id', billId)
       .select();
