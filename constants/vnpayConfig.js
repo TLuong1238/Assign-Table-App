@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 export const VNPAY_CONFIG = {
   // ✅ Sandbox URLs (Test environment)
   PAYMENT_URL: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
-  
+
   // ✅ FIX RETURN URL - FORCE HTTPBIN
   get RETURN_URL() {
     if (__DEV__) {
@@ -13,24 +13,24 @@ export const VNPAY_CONFIG = {
       return 'bunchaobama://vnpay-return';
     }
   },
-  
+
   // ✅ Merchant Info
-  TMN_CODE: 'SHBIE26J',              
-  HASH_SECRET: 'U6GK10I9PBNC4UU5HU9GMZZM4V6V78ZW',   
-  
+  TMN_CODE: 'SHBIE26J',
+  HASH_SECRET: 'U6GK10I9PBNC4UU5HU9GMZZM4V6V78ZW',
+
   // ✅ VNPay API Version & Commands
   VERSION: '2.1.0',
   COMMAND: 'pay',
   CURR_CODE: 'VND',
   LOCALE: 'vn',
-  
+
   // ✅ Order Types
   ORDER_TYPE: {
-    DEPOSIT: 'other',    
-    FULL: 'other',            
-    FOOD: 'other'              
+    DEPOSIT: 'other',
+    FULL: 'other',
+    FOOD: 'other'
   },
-  
+
   // ✅ Response Codes
   RESPONSE_CODES: {
     SUCCESS: '00',
@@ -41,7 +41,7 @@ export const VNPAY_CONFIG = {
     CANCELLED: '06',
     SUSPICIOUS: '07'
   },
-  
+
   // ✅ Transaction Status
   TRANSACTION_STATUS: {
     SUCCESS: '00',
@@ -54,16 +54,32 @@ export const VNPAY_CONFIG = {
 export const parseHttpBinResponse = (httpBinData) => {
   try {
     console.log('🔄 Parsing HTTPBin response:', httpBinData);
-    
-    const vnpayParams = httpBinData.args || {};
-    
-    if (!vnpayParams.vnp_ResponseCode) {
-      throw new Error('No VNPay response code in HTTPBin data');
+
+    // ✅ SỬA: LẤY TỪNG LOẠI DATA
+    let vnpayParams = {};
+
+    if (httpBinData.args) {
+      // ✅ HTTPBin format: { args: { vnp_ResponseCode: "00", ... } }
+      vnpayParams = httpBinData.args;
+    } else if (httpBinData.vnp_ResponseCode) {
+      // ✅ Direct VNPay format: { vnp_ResponseCode: "00", ... }
+      vnpayParams = httpBinData;
+    } else {
+      // ✅ Check nested data
+      vnpayParams = httpBinData;
     }
-    
+
+    console.log('📊 Extracted VNPay params:', vnpayParams);
+
+    // ✅ VALIDATE RESPONSE CODE
+    if (!vnpayParams.vnp_ResponseCode) {
+      console.error('❌ Available keys:', Object.keys(vnpayParams));
+      throw new Error('No VNPay response code found in data');
+    }
+
     // ✅ SKIP VALIDATION - CHỈ PARSE DATA
-    const isSuccess = vnpayParams.vnp_ResponseCode === '00' && 
-                     vnpayParams.vnp_TransactionStatus === '00';
+    const isSuccess = vnpayParams.vnp_ResponseCode === '00' &&
+      vnpayParams.vnp_TransactionStatus === '00';
 
     const result = {
       isSuccess,
@@ -80,12 +96,14 @@ export const parseHttpBinResponse = (httpBinData) => {
       message: VNPAY_MESSAGES[vnpayParams.vnp_ResponseCode] || 'Không xác định',
       rawData: vnpayParams
     };
-    
+
+    console.log('✅ Parsed HTTPBin result:', result);
+
     return {
       success: true,
       data: result
     };
-    
+
   } catch (error) {
     console.error('❌ Parse HTTPBin response error:', error);
     return {

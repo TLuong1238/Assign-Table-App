@@ -1,13 +1,14 @@
 // hooks/useVNPay.js
 import { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
+import { supabase } from '../lib/supabase';
 import { 
   createVNPayPayment,
   handleVNPayReturn,
   getPaymentByOrderId,
   cancelPayment
 } from '../services/vnpayService';
-import { calculateDepositAmount, formatCurrency } from '../constants/paymentConfig';
+import { calculateDepositAmount, formatCurrency, isVipUser } from '../constants/paymentConfig';
 
 const useVNPay = () => {
   const [loading, setLoading] = useState(false);
@@ -16,11 +17,14 @@ const useVNPay = () => {
   const [currentPayment, setCurrentPayment] = useState(null);
   const [paymentResult, setPaymentResult] = useState(null);
 
-  // ✅ Tạo thanh toán VNPay
+  // ✅ Tạo thanh toán VNPay - XÓA VIP CHECK
   const createPayment = useCallback(async (paymentData) => {
     try {
       setLoading(true);
       console.log('Creating VNPay payment:', paymentData);
+
+      // ✅ XÓA VIP VALIDATION - KHÔNG CẦN KIỂM TRA VIP NỮA
+      // Thanh toán phần còn lại không phân biệt VIP hay không
 
       const result = await createVNPayPayment(paymentData);
       
@@ -100,7 +104,6 @@ const useVNPay = () => {
           {
             text: 'Xem chi tiết',
             onPress: () => {
-              // Navigate to payment detail or bill detail
               console.log('Navigate to payment detail:', payment.id);
             }
           },
@@ -223,18 +226,46 @@ const useVNPay = () => {
     setLoading(false);
   }, []);
 
-  // ✅ Tạo thanh toán cọc
+  // ✅ Tạo thanh toán cọc - CHỈ GIỮ VIP CHECK CHO DEPOSIT
   const createDepositPayment = useCallback(async (billData, userId) => {
     try {
+      // ✅ VIP CHECK CHỈ CHO DEPOSIT - GIỮ LẠI
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        throw new Error('Unable to verify user information');
+      }
+
+      if (isVipUser(userData)) {
+        Alert.alert(
+          '🌟 VIP Privilege',
+          'VIP members don\'t need to pay any deposit. Please use direct booking.',
+          [{ text: 'Got it!', style: 'default' }]
+        );
+        return {
+          success: false,
+          message: 'VIP users do not need to pay deposit'
+        };
+      }
+
+      // ✅ TÍNH CỌC THEO LOGIC MỚI
       const totalAmount = billData.price || 0;
-      const depositAmount = calculateDepositAmount(totalAmount);
+      const hasFood = billData.cartDetails?.length > 0;
+      const depositAmount = calculateDepositAmount(totalAmount, hasFood, false);
+
+      console.log('💰 Deposit calculation:', { totalAmount, hasFood, depositAmount });
 
       const paymentData = {
         userId,
         billData: {
           ...billData,
           totalAmount,
-          depositAmount
+          depositAmount,
+          hasFood
         },
         amount: depositAmount,
         paymentType: 'deposit'
@@ -251,9 +282,45 @@ const useVNPay = () => {
     }
   }, [createPayment]);
 
-  // ✅ Tạo thanh toán đầy đủ
+  // ✅ Tạo thanh toán đầy đủ - CHỈ GIỮ VIP CHECK CHO FULL
   const createFullPayment = useCallback(async (billData, userId) => {
     try {
+      // ✅ VIP CHECK CHỈ CHO FULL - GIỮ LẠI
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        throw new Error('Unable to verify user information');
+      }
+
+      if (isVipUser(userData)) {
+        Alert.alert(
+          '🌟 VIP Privilege',
+          'VIP members don\'t need to pay anything. Please use direct booking.',
+          [{ text: 'Got it!', style: 'default' }]
+        );
+        return {
+          success: false,
+          message: 'VIP users do not need to pay'
+        };
+      }
+
+      // ✅ FULL PAYMENT CHỈ CHO ĐƠN CÓ MÓN ĂN
+      if (!billData.cartDetails?.length) {
+        Alert.alert(
+          'Invalid Payment Type',
+          'Full payment is only available for orders with food. For table booking only, please use deposit payment.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        return {
+          success: false,
+          message: 'Full payment is only available for orders with food'
+        };
+      }
+
       const totalAmount = billData.price || 0;
 
       const paymentData = {

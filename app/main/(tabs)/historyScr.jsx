@@ -15,7 +15,8 @@ const PAYMENT_STATUS = {
   PENDING: 'pending',
   DEPOSIT_PAID: 'deposit_paid',
   FULLY_PAID: 'fully_paid',
-  COUNTER_PAYMENT: 'counter_payment'
+  COUNTER_PAYMENT: 'counter_payment',
+  PENDING_COUNTER: 'pending_counter'
 };
 
 const PaymentUtils = {
@@ -33,7 +34,8 @@ const PaymentUtils = {
           amount: currentTotal,
           amountText: `Cần thanh toán: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#ffeaea',
-          borderColor: '#ffb3b3'
+          borderColor: '#ffb3b3',
+          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
         };
 
       case PAYMENT_STATUS.DEPOSIT_PAID:
@@ -44,7 +46,8 @@ const PaymentUtils = {
           amount: remaining,
           amountText: `Đã cọc: ${deposit.toLocaleString('vi-VN')}đ - Còn lại: ${remaining.toLocaleString('vi-VN')}đ`,
           bgColor: '#fff8e1',
-          borderColor: '#ffe082'
+          borderColor: '#ffe082',
+          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
         };
 
       case PAYMENT_STATUS.FULLY_PAID:
@@ -55,7 +58,8 @@ const PaymentUtils = {
           amount: currentTotal,
           amountText: `Đã thanh toán: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#e8f5e8',
-          borderColor: '#90ee90'
+          borderColor: '#90ee90',
+          showTimeStatus: false // ✅ KHÔNG HIỂN THỊ THỜI GIAN
         };
 
       case PAYMENT_STATUS.COUNTER_PAYMENT:
@@ -66,7 +70,8 @@ const PaymentUtils = {
           amount: currentTotal,
           amountText: `Thanh toán tại quầy: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#f3e5f5',
-          borderColor: '#ce93d8'
+          borderColor: '#ce93d8',
+          showTimeStatus: false // ✅ KHÔNG HIỂN THỊ THỜI GIAN
         };
 
       default:
@@ -77,7 +82,8 @@ const PaymentUtils = {
           amount: currentTotal,
           amountText: `Tổng tiền: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#f5f5f5',
-          borderColor: '#e0e0e0'
+          borderColor: '#e0e0e0',
+          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
         };
     }
   },
@@ -90,6 +96,8 @@ const PaymentUtils = {
         return { name: 'Tại quầy', icon: 'Home', color: '#8e44ad' };
       case 'cash':
         return { name: 'Tiền mặt', icon: 'DollarSign', color: '#27ae60' };
+      case 'vip':
+        return { name: 'VIP', icon: 'Star', color: '#f39c12' };
       default:
         return { name: 'Chưa chọn', icon: 'HelpCircle', color: '#95a5a6' };
     }
@@ -116,7 +124,7 @@ const BILL_STATUS = {
   CANCELLED: 'cancelled'
 };
 
-// ✅ TimeUtils - LOGIC HỦY ĐƠN
+// ✅ TimeUtils - SỬA LOGIC THỜI GIAN VÀ THÊM LOGIC NÚT "ĐÃ ĐẾN"
 const TimeUtils = {
   calculateTimeStatus: (timeString) => {
     const now = new Date();
@@ -130,36 +138,40 @@ const TimeUtils = {
       const overdueMinutes = Math.abs(Math.floor(diffMinutes));
       const overdueHours = Math.floor(overdueMinutes / 60);
       const remainingMinutes = overdueMinutes % 60;
-      
+
       let overdueText;
       if (overdueHours > 0) {
-        overdueText = remainingMinutes > 0 
+        overdueText = remainingMinutes > 0
           ? `Quá ${overdueHours}h ${remainingMinutes}p`
           : `Quá ${overdueHours} giờ`;
       } else {
         overdueText = `Quá ${overdueMinutes} phút`;
       }
-      
+
       return {
         status: 'expired',
         text: overdueText,
         color: '#e74c3c',
         shouldAutoCancel: overdueMinutes >= 15, // ✅ TỰ ĐỘNG HỦY SAU 15 PHÚT
-        overdueMinutes
+        overdueMinutes,
+        canCancel: false, // ✅ KHÔNG CHO HỦY KHI QUÁ GIỜ
+        canArrived: overdueMinutes <= 10 // ✅ CHỈ CHO ĐẾN TRONG 10 PHÚT ĐẦU
       };
     } else if (diffHours <= 2) {
       return {
         status: 'soon',
         text: `Còn ${Math.ceil(diffMinutes)} phút`,
         color: '#e67e22',
-        canCancel: false // ✅ KHÔNG CHO HỦY KHI CÒN < 2 TIẾNG
+        canCancel: false, // ✅ KHÔNG CHO HỦY KHI CÒN < 2 TIẾNG
+        canArrived: diffMinutes <= 10 // ✅ CHỈ CHO ĐẾN TRONG 10 PHÚT CUỐI
       };
     } else {
       return {
         status: 'normal',
         text: `Còn ${Math.ceil(diffHours)} giờ`,
         color: '#27ae60',
-        canCancel: true // ✅ CHO PHÉP HỦY KHI CÒN > 2 TIẾNG
+        canCancel: true, // ✅ CHO PHÉP HỦY KHI CÒN > 2 TIẾNG
+        canArrived: false // ✅ KHÔNG CHO ĐẾN KHI CÒN QUÁ SỚM
       };
     }
   },
@@ -169,7 +181,7 @@ const TimeUtils = {
     const now = new Date();
     const billTimeDate = new Date(billTime);
     const diffHours = (billTimeDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
+
     if (diffHours >= 24) {
       return {
         canCancel: true,
@@ -184,6 +196,30 @@ const TimeUtils = {
       return {
         canCancel: false,
         message: 'Không thể hủy (còn < 2 tiếng)'
+      };
+    }
+  },
+
+  // ✅ THÊM FUNCTION KIỂM TRA THỜI GIAN CHO NÚT "ĐÃ ĐẾN"
+  calculateArrivedInfo: (billTime) => {
+    const now = new Date();
+    const billTimeDate = new Date(billTime);
+    const diffMinutes = (billTimeDate.getTime() - now.getTime()) / (1000 * 60);
+
+    if (diffMinutes > 10) {
+      return {
+        canArrived: false,
+        message: 'Chỉ có thể xác nhận đã đến trong vòng 10 phút trước giờ hẹn'
+      };
+    } else if (diffMinutes >= -10) {
+      return {
+        canArrived: true,
+        message: 'Có thể xác nhận đã đến'
+      };
+    } else {
+      return {
+        canArrived: false,
+        message: 'Đã quá 10 phút sau giờ hẹn'
       };
     }
   }
@@ -314,15 +350,15 @@ const TablesSection = memo(({ details, getTableName }) => (
   </View>
 ));
 
-// ✅ ActionButtons - LOGIC HIỂN THỊ BUTTONS
-const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived }) => {
+// ✅ ActionButtons - SỬA LOGIC HIỂN THỊ NÚT "ĐÃ ĐẾN"
+const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived, paymentInfo }) => {
   // ✅ KHÔNG HIỂN THỊ NẾU ĐÃ ĐẾN HOẶC ĐÃ HỦY
   if (item.visit === 'visited' || item.state === 'cancelled') {
     return null;
   }
 
-  // ✅ KHÔNG HIỂN THỊ NẾU QUÁ 15 PHÚT (SẼ TỰ ĐỘNG HỦY)
-  if (timeStatus.shouldAutoCancel) {
+  // ✅ KHÔNG HIỂN THỊ NẾU QUÁ 15 PHÚT (SẼ TỰ ĐỘNG HỦY) - CHỈ KHI CHƯA THANH TOÁN ĐẦY ĐỦ
+  if (timeStatus.shouldAutoCancel && paymentInfo.showTimeStatus) {
     return (
       <View style={styles.autoCancelSection}>
         <Icon.Clock width={20} height={20} color="#e74c3c" />
@@ -333,10 +369,13 @@ const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived }) => {
     );
   }
 
+  // ✅ KIỂM TRA THỜI GIAN CHO NÚT "ĐÃ ĐẾN"
+  const arrivedInfo = TimeUtils.calculateArrivedInfo(item.time);
+
   return (
     <View style={styles.actionButtons}>
-      {/* ✅ NÚT HỦY - CHỈ HIỂN THỊ NẾU ĐƯỢC PHÉP HỦY */}
-      {(timeStatus.canCancel !== false) && (
+      {/* ✅ NÚT HỦY - CHỈ HIỂN THỊ NẾU ĐƯỢC PHÉP HỦY VÀ CHƯA THANH TOÁN ĐẦY ĐỦ */}
+      {(timeStatus.canCancel !== false) && paymentInfo.showTimeStatus && (
         <TouchableOpacity
           style={[styles.actionButton, styles.cancelButton]}
           onPress={() => onCancel(item, timeStatus)}
@@ -346,14 +385,26 @@ const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived }) => {
         </TouchableOpacity>
       )}
 
-      {/* ✅ NÚT ĐÃ ĐẾN - LUÔN HIỂN THỊ NẾU CHƯA visited */}
-      <TouchableOpacity
-        style={[styles.actionButton, styles.arrivedButton]}
-        onPress={() => onArrived(item)}
-      >
-        <Icon.Check width={16} height={16} color="white" />
-        <Text style={styles.actionButtonText}>Đã đến</Text>
-      </TouchableOpacity>
+      {/* ✅ NÚT ĐÃ ĐẾN - CHỈ HIỂN THỊ TRONG 10 PHÚT TRƯỚC/SAU GIỜ HẸN */}
+      {arrivedInfo.canArrived && paymentInfo.showTimeStatus && (
+        <TouchableOpacity
+          style={[styles.actionButton, styles.arrivedButton]}
+          onPress={() => onArrived(item)}
+        >
+          <Icon.Check width={16} height={16} color="white" />
+          <Text style={styles.actionButtonText}>Đã đến</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ✅ HIỂN THỊ THÔNG BÁO KHI KHÔNG THỂ ĐẾN */}
+      {!arrivedInfo.canArrived && !timeStatus.shouldAutoCancel && (
+        <View style={styles.arrivedDisabledSection}>
+          <Icon.Info width={18} height={18} color="#95a5a6" />
+          <Text style={styles.arrivedDisabledText}>
+            {arrivedInfo.message}
+          </Text>
+        </View>
+      )}
     </View>
   );
 });
@@ -416,17 +467,23 @@ const HistoryScr = () => {
     return table ? `Bàn ${table.id} - Tầng ${table.floor}` : `Bàn ${tableId}`;
   }, [tables]);
 
-  // ✅ TỰ ĐỘNG HỦY ĐƠN QUÁ GIỜ
+  // ✅ TỰ ĐỘNG HỦY ĐƠN QUÁ GIỜ - CHỈ KHI CHƯA THANH TOÁN ĐẦY ĐỦ
   const autoCanCelOverdueBills = useCallback(async () => {
     if (!bills.length) return;
 
     const now = new Date();
     const billsToCancel = bills.filter(bill => {
       if (bill.state !== 'in_order' || bill.visit === 'visited') return false;
-      
+
+      // ✅ KHÔNG TỰ ĐỘNG HỦY NẾU ĐÃ THANH TOÁN ĐẦY ĐỦ
+      if (bill.payment_status === PAYMENT_STATUS.FULLY_PAID ||
+        bill.payment_status === PAYMENT_STATUS.COUNTER_PAYMENT) {
+        return false;
+      }
+
       const billTime = new Date(bill.time);
       const overdueMinutes = (now.getTime() - billTime.getTime()) / (1000 * 60);
-      
+
       return overdueMinutes >= 15; // Quá 15 phút
     });
 
@@ -436,7 +493,6 @@ const HistoryScr = () => {
 
     for (const bill of billsToCancel) {
       try {
-        // ✅ HỦY ĐƠN
         await processBillCancellation(bill, 'auto_cancel', true);
       } catch (error) {
         console.error('Error auto cancelling bill:', bill.id, error);
@@ -451,10 +507,10 @@ const HistoryScr = () => {
     const now = new Date();
     const billsToComplete = bills.filter(bill => {
       if (bill.state !== 'in_order' || bill.visit !== 'visited') return false;
-      
+
       const visitedTime = new Date(bill.updated_at);
       const minutesSinceVisited = (now.getTime() - visitedTime.getTime()) / (1000 * 60);
-      
+
       return minutesSinceVisited >= 40;
     });
 
@@ -474,8 +530,8 @@ const HistoryScr = () => {
 
         if (error) throw error;
 
-        setBills(prev => prev.map(b => 
-          b.id === bill.id 
+        setBills(prev => prev.map(b =>
+          b.id === bill.id
             ? { ...b, state: 'completed', updated_at: new Date().toISOString() }
             : b
         ));
@@ -504,8 +560,8 @@ const HistoryScr = () => {
       if (billError) throw billError;
 
       // ✅ UPDATE LOCAL STATE
-      setBills(prev => prev.map(b => 
-        b.id === bill.id 
+      setBills(prev => prev.map(b =>
+        b.id === bill.id
           ? { ...b, ...updateData }
           : b
       ));
@@ -605,8 +661,19 @@ const HistoryScr = () => {
   // Event handlers
   // ✅ HỦY ĐƠN - CHỈ 2 TRƯỜNG HỢP
   const handleCancelBill = useCallback((bill, timeStatus) => {
+    // ✅ KHÔNG CHO HỦY NẾU ĐÃ THANH TOÁN ĐẦY ĐỦ
+    if (bill.payment_status === PAYMENT_STATUS.FULLY_PAID ||
+      bill.payment_status === PAYMENT_STATUS.COUNTER_PAYMENT) {
+      Alert.alert(
+        'Không thể hủy đơn',
+        'Đơn hàng đã được thanh toán đầy đủ, không thể hủy.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     const cancelInfo = TimeUtils.calculateCancelInfo(bill.time, bill.deposit_amount);
-    
+
     let alertMessage = `Bạn có chắc muốn hủy đơn hàng của ${bill.name}?\n\n`;
     alertMessage += cancelInfo.message;
 
@@ -624,7 +691,19 @@ const HistoryScr = () => {
     );
   }, [processBillCancellation]);
 
+  // ✅ SỬA handleArrived - THÊM VALIDATION THỜI GIAN
   const handleArrived = useCallback((bill) => {
+    const arrivedInfo = TimeUtils.calculateArrivedInfo(bill.time);
+
+    if (!arrivedInfo.canArrived) {
+      Alert.alert(
+        'Không thể xác nhận đã đến',
+        arrivedInfo.message,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     Alert.alert(
       'Xác nhận đã đến',
       `Xác nhận bạn đã đến nhà hàng cho đơn hàng của ${bill.name}?`,
@@ -663,131 +742,257 @@ const HistoryScr = () => {
 
   // ✅ THANH TOÁN CÒN LẠI
   const handlePayRemaining = useCallback(async (bill, remainingAmount, paymentMethod = 'vnpay') => {
-    console.log('💰 Pay remaining:', { billId: bill.id, amount: remainingAmount, method: paymentMethod });
-    
-    if (paymentMethod === 'counter') {
+    try {
+      console.log('💰 Processing remaining payment for bill:', bill.id);
+
+      // ✅ VALIDATION TRƯỚC KHI THANH TOÁN
+      if (!bill || !bill.id) {
+        Alert.alert('Lỗi', 'Thông tin đơn hàng không hợp lệ');
+        return;
+      }
+
+      // ✅ KIỂM TRA TRẠNG THÁI BILL
+      if (bill.payment_status !== 'deposit_paid') {
+        Alert.alert('Lỗi', 'Đơn hàng này không thể thanh toán phần còn lại');
+        return;
+      }
+
+      // ✅ TÍNH TOÁN SỐ TIỀN CÒN LẠI
+      const totalAmount = bill.total_amount || bill.price || 0;
+      const depositAmount = bill.deposit_amount || 0;
+      const remainingAmount = totalAmount - depositAmount;
+
+      console.log('💰 Payment calculation:', {
+        totalAmount,
+        depositAmount,
+        remainingAmount
+      });
+
+      // ✅ VALIDATION SỐ TIỀN
+      if (remainingAmount <= 0) {
+        Alert.alert('Thông báo', 'Đơn hàng này đã được thanh toán đầy đủ');
+        return;
+      }
+
+      if (remainingAmount > 50000000) { // 50M limit
+        Alert.alert('Lỗi', 'Số tiền thanh toán quá lớn');
+        return;
+      }
+
+      // ✅ HIỂN THỊ MODAL XÁC NHẬN
       Alert.alert(
-        'Xác nhận thanh toán tại quầy',
-        `Thanh toán ${remainingAmount.toLocaleString('vi-VN')}đ tại quầy cho đơn #${bill.id}?`,
+        'Xác nhận thanh toán',
+        `Bạn có muốn thanh toán phần còn lại?\n\n` +
+        `Tổng tiền: ${totalAmount.toLocaleString('vi-VN')}đ\n` +
+        `Đã cọc: ${depositAmount.toLocaleString('vi-VN')}đ\n` +
+        `Còn lại: ${remainingAmount.toLocaleString('vi-VN')}đ\n\n` +
+        `Phương thức: ${paymentMethod === 'vnpay' ? 'VNPay' : 'Tại quầy'}`,
         [
           { text: 'Hủy', style: 'cancel' },
           {
-            text: 'Xác nhận',
+            text: 'Thanh toán',
             onPress: async () => {
-              try {
-                const { error: billError } = await supabase
-                  .from('bills')
-                  .update({
-                    visit: 'visited',
-                    payment_status: PAYMENT_STATUS.FULLY_PAID,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', bill.id);
-
-                if (billError) throw billError;
-
-                const { error: paymentError } = await supabase
-                  .from('payments')
-                  .insert([
-                    {
-                      orderid: `COUNTER_${bill.id}_${Date.now()}`,
-                      billid: bill.id,
-                      userid: user.id,
-                      amount: remainingAmount,
-                      payment_type: 'counter',
-                      payment_method: 'counter',
-                      status: 'completed',
-                      completed_at: new Date().toISOString(),
-                      bill_data: {
-                        billId: bill.id,
-                        name: bill.name,
-                        phone: bill.phone,
-                        originalAmount: bill.total_amount || bill.price
-                      }
-                    }
-                  ]);
-
-                if (paymentError) throw paymentError;
-
-                setBills(prev => prev.map(b =>
-                  b.id === bill.id
-                    ? {
-                      ...b,
-                      visit: 'visited',
-                      payment_status: PAYMENT_STATUS.FULLY_PAID,
-                      updated_at: new Date().toISOString()
-                    }
-                    : b
-                ));
-
-                Alert.alert('Thành công', 'Đã hoàn thành thanh toán tại quầy');
-              } catch (error) {
-                console.error('Error updating payment status:', error);
-                Alert.alert('Lỗi', 'Không thể cập nhật trạng thái thanh toán');
-              }
+              await processRemainingPayment(bill, remainingAmount, paymentMethod);
             }
           }
         ]
       );
-    } else if (paymentMethod === 'vnpay') {
-      try {
-        console.log('🔄 Creating VNPay payment for remaining amount...');
-        
+
+    } catch (error) {
+      console.error('❌ Error in handlePayRemaining:', error);
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi xử lý thanh toán: ' + error.message);
+    }
+  }, []);
+
+  // ✅ THÊM FUNCTION processRemainingPayment MỚI:
+  const processRemainingPayment = useCallback(async (bill, remainingAmount, paymentMethod) => {
+    try {
+      console.log('🔄 Processing remaining payment:', {
+        billId: bill.id,
+        amount: remainingAmount,
+        method: paymentMethod
+      });
+
+      setLoading(true);
+
+      if (paymentMethod === 'counter') {
+        // ✅ XỬ LÝ THANH TOÁN TẠI QUẦY
+
+        // 1. TÌM PAYMENT RECORD CỦA BILL
+        const { data: existingPayment, error: findError } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('billid', bill.id)
+          .eq('payment_type', 'deposit')
+          .eq('status', 'completed')
+          .single();
+
+        if (findError) {
+          console.error('❌ Cannot find existing payment:', findError);
+          throw new Error('Không tìm thấy thanh toán cọc ban đầu');
+        }
+
+        console.log('✅ Found existing payment:', existingPayment.id);
+
+        // 2. UPDATE PAYMENT RECORD - ĐỔI THÀNH FULL
+        const { error: updatePaymentError } = await supabase
+          .from('payments')
+          .update({
+            payment_type: 'full', // ✅ ĐỔI THÀNH FULL
+            amount: bill.total_amount || bill.price, // ✅ SỐ TIỀN FULL
+            payment_method: 'counter', // ✅ PHƯƠNG THỨC CUỐI CÙNG
+            updated_at: new Date().toISOString(),
+            bill_data: {
+              ...existingPayment.bill_data,
+              remainingAmount: remainingAmount,
+              remainingPaymentMethod: 'counter',
+              remainingPaymentDate: new Date().toISOString()
+            }
+          })
+          .eq('id', existingPayment.id);
+
+        if (updatePaymentError) {
+          console.error('❌ Error updating payment:', updatePaymentError);
+          throw updatePaymentError;
+        }
+
+        console.log('✅ Payment updated to full payment');
+
+        // 3. UPDATE BILL STATUS
+        const { error: billError } = await supabase
+          .from('bills')
+          .update({
+            payment_status: 'fully_paid',
+            payment_method: 'counter',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', bill.id);
+
+        if (billError) {
+          console.error('❌ Error updating bill:', billError);
+          throw billError;
+        }
+
+        console.log('✅ Bill updated to fully_paid');
+
+        // 4. UPDATE LOCAL STATE
+        setBills(prev => prev.map(b =>
+          b.id === bill.id
+            ? {
+              ...b,
+              payment_status: 'fully_paid',
+              payment_method: 'counter',
+              updated_at: new Date().toISOString()
+            }
+            : b
+        ));
+
+        Alert.alert('✅ Thành công', 'Đã xác nhận thanh toán phần còn lại tại quầy');
+
+      } else if (paymentMethod === 'vnpay') {
+        // ✅ XỬ LÝ THANH TOÁN VNPAY
+
+        // 1. TÌM PAYMENT RECORD CỦA BILL
+        const { data: existingPayment, error: findError } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('billid', bill.id)
+          .eq('payment_type', 'deposit')
+          .eq('status', 'completed')
+          .single();
+
+        if (findError) {
+          console.error('❌ Cannot find existing payment:', findError);
+          throw new Error('Không tìm thấy thanh toán cọc ban đầu');
+        }
+
+        console.log('✅ Found existing payment for VNPay update:', existingPayment.id);
+
+        // 2. TẠO PAYMENT DATA CHO VNPAY
         const paymentData = {
           userId: user.id,
+          billId: bill.id,
+          amount: remainingAmount,
+          paymentType: 'remaining',
+          existingPaymentId: existingPayment.id, // ✅ THÊM ID CỦA PAYMENT CŨ
           billData: {
             billId: bill.id,
             name: bill.name,
             phone: bill.phone,
             num_people: bill.num_people,
-            originalAmount: bill.total_amount || bill.price,
-            remainingAmount: remainingAmount
-          },
-          amount: remainingAmount,
-          paymentType: 'remaining'
+            time: bill.time,
+            note: bill.note,
+            totalAmount: bill.total_amount || bill.price,
+            depositAmount: bill.deposit_amount,
+            remainingAmount: remainingAmount,
+            existingPaymentId: existingPayment.id // ✅ THÊM VÀO BILL DATA
+          }
         };
 
+        console.log('📋 VNPay payment data with existing payment:', paymentData);
+
+        // 3. TẠO VNPAY URL
         const result = await createVNPayPayment(paymentData);
 
         if (result.success) {
-          console.log('✅ VNPay payment created:', result.data);
-          
+          console.log('✅ VNPay payment created for remaining amount');
+
           setCurrentPaymentData({
             ...result.data,
-            billId: bill.id,
-            originalBill: bill
+            existingPaymentId: existingPayment.id,
+            billId: bill.id
           });
           setVnpayUrl(result.data.vnpayUrl);
           setVnpayWebViewVisible(true);
         } else {
-          throw new Error(result.message);
+          console.error('❌ VNPay payment creation failed:', result);
+          throw new Error(result.message || 'Không thể tạo thanh toán VNPay');
         }
-      } catch (error) {
-        console.error('❌ Error creating VNPay payment:', error);
-        Alert.alert(
-          'Lỗi tạo thanh toán',
-          error.message || 'Không thể tạo thanh toán VNPay. Vui lòng thử lại.'
-        );
       }
+
+    } catch (error) {
+      console.error('❌ Error in processRemainingPayment:', error);
+
+      let errorMessage = 'Có lỗi xảy ra khi xử lý thanh toán';
+      if (error.message?.includes('find')) {
+        errorMessage = 'Không tìm thấy thông tin thanh toán ban đầu';
+      } else if (error.message?.includes('constraint')) {
+        errorMessage = 'Dữ liệu thanh toán không hợp lệ';
+      } else if (error.message?.includes('network')) {
+        errorMessage = 'Lỗi kết nối mạng. Vui lòng thử lại';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert('❌ Lỗi thanh toán', errorMessage);
+
+    } finally {
+      setLoading(false);
     }
-  }, [user.id]);
+  }, [user]);
+
 
   const handleVNPaySuccess = useCallback(async (vnpayData) => {
     try {
-      console.log('💰 VNPay payment success:', vnpayData);
-      
+      console.log('✅ VNPay payment success:', vnpayData);
+
+      // ✅ VALIDATION VNPAY DATA
+      if (!vnpayData || !vnpayData.rawData) {
+        throw new Error('Dữ liệu thanh toán không hợp lệ');
+      }
+
       const serviceResult = await handleVNPayReturn(vnpayData.rawData, true);
-      
+
       if (serviceResult.success) {
         const { payment, bill } = serviceResult.data;
-        
+
+        // ✅ CẬP NHẬT BILL CHO REMAINING PAYMENT
         if (currentPaymentData?.billId) {
           const { error: billUpdateError } = await supabase
             .from('bills')
             .update({
-              visit: 'visited',
-              payment_status: PAYMENT_STATUS.FULLY_PAID,
-              payment_id: payment.orderid,
+              payment_status: 'fully_paid',
+              payment_id: payment.id.toString(),
               updated_at: new Date().toISOString()
             })
             .eq('id', currentPaymentData.billId);
@@ -799,9 +1004,8 @@ const HistoryScr = () => {
               b.id === currentPaymentData.billId
                 ? {
                   ...b,
-                  visit: 'visited',
-                  payment_status: PAYMENT_STATUS.FULLY_PAID,
-                  payment_id: payment.orderid,
+                  payment_status: 'fully_paid',
+                  payment_id: payment.id.toString(),
                   updated_at: new Date().toISOString()
                 }
                 : b
@@ -809,41 +1013,57 @@ const HistoryScr = () => {
           }
         }
 
+        // ✅ REFRESH DATA
+        await fetchBills();
+
         Alert.alert(
           '✅ Thanh toán thành công!',
           `Bạn đã thanh toán thành công ${vnpayData.amount.toLocaleString('vi-VN')}đ\n\n` +
-          `Mã giao dịch: ${vnpayData.transactionNo}\n` +
-          `Ngân hàng: ${vnpayData.bankCode}\n\n` +
-          `Đơn hàng của bạn đã được thanh toán đầy đủ!`,
+          `Mã đơn hàng: #${currentPaymentData?.billId || 'N/A'}\n` +
+          `Mã giao dịch: ${vnpayData.transactionNo || 'N/A'}\n` +
+          `Ngân hàng: ${vnpayData.bankCode || 'N/A'}\n\n` +
+          `Đơn hàng đã được thanh toán đầy đủ!`,
           [
             {
               text: 'OK',
               onPress: () => {
-                fetchBills();
+                setVnpayWebViewVisible(false);
+                setCurrentPaymentData(null);
+                setVnpayUrl('');
               }
             }
           ]
         );
       } else {
-        throw new Error(serviceResult.message);
+        throw new Error(serviceResult.message || 'Lỗi xử lý thanh toán từ server');
       }
+
     } catch (error) {
-      console.error('❌ Error handling VNPay success:', error);
+      console.error('❌ Error in handleVNPaySuccess:', error);
+
       Alert.alert(
-        'Lỗi xử lý',
-        'Thanh toán thành công nhưng có lỗi cập nhật dữ liệu. Vui lòng liên hệ hỗ trợ.'
+        '⚠️ Cảnh báo',
+        'Thanh toán đã thực hiện thành công nhưng có vấn đề khi cập nhật dữ liệu.\n\n' +
+        'Vui lòng kiểm tra lại lịch sử giao dịch hoặc liên hệ hỗ trợ.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setVnpayWebViewVisible(false);
+              setCurrentPaymentData(null);
+              setVnpayUrl('');
+              fetchBills();
+            }
+          }
+        ]
       );
-    } finally {
-      setVnpayWebViewVisible(false);
-      setCurrentPaymentData(null);
-      setVnpayUrl('');
     }
   }, [currentPaymentData, fetchBills]);
 
   const handleVNPayFailure = useCallback(async (errorData) => {
     try {
       console.log('❌ VNPay payment failed:', errorData);
-      
+
       if (currentPaymentData?.orderId) {
         await supabase
           .from('payments')
@@ -864,8 +1084,8 @@ const HistoryScr = () => {
             text: 'Thử lại',
             onPress: () => {
               if (currentPaymentData?.originalBill) {
-                const remaining = (currentPaymentData.originalBill.total_amount || currentPaymentData.originalBill.price) - 
-                                (currentPaymentData.originalBill.deposit_amount || 0);
+                const remaining = (currentPaymentData.originalBill.total_amount || currentPaymentData.originalBill.price) -
+                  (currentPaymentData.originalBill.deposit_amount || 0);
                 handlePayRemaining(currentPaymentData.originalBill, remaining, 'vnpay');
               }
             }
@@ -887,7 +1107,7 @@ const HistoryScr = () => {
 
   const handleVNPayClose = useCallback(() => {
     console.log('🔒 VNPay WebView closed');
-    
+
     setVnpayWebViewVisible(false);
     setCurrentPaymentData(null);
     setVnpayUrl('');
@@ -904,10 +1124,16 @@ const HistoryScr = () => {
     }
   });
 
-  // ✅ renderBillItem
+  // ✅ renderBillItem - SỬA LOGIC HIỂN THỊ
   const renderBillItem = useCallback(({ item, index }) => {
     const billStatus = getBillStatus(item.state, item.visit);
     const timeStatus = TimeUtils.calculateTimeStatus(item.time);
+    const paymentInfo = PaymentUtils.getPaymentStatusInfo(
+      item.payment_status,
+      item.deposit_amount,
+      item.total_amount,
+      item.price
+    ); // ✅ LẤY PAYMENT INFO
 
     return (
       <View style={styles.billCard}>
@@ -937,14 +1163,20 @@ const HistoryScr = () => {
             textStyle={styles.priceText}
           />
 
+          {/* ✅ CHỈ HIỂN THỊ THỜI GIAN KHI CẦN THIẾT */}
           {billStatus === BILL_STATUS.WAITING && (
             <BillInfoRow
               icon="Info"
-              text={timeStatus.text}
-              iconColor={timeStatus.color}
-              textStyle={{ color: timeStatus.color }}
+              text={paymentInfo.showTimeStatus ? timeStatus.text : 'Đã sẵn sàng phục vụ'}
+              iconColor={paymentInfo.showTimeStatus ? timeStatus.color : '#27ae60'}
+              textStyle={{
+                color: paymentInfo.showTimeStatus ? timeStatus.color : '#27ae60',
+                fontWeight: paymentInfo.showTimeStatus ? 'normal' : '600'
+              }}
             />
           )}
+
+
 
           {item.note && <BillInfoRow icon="FileText" text={item.note} />}
         </View>
@@ -957,19 +1189,20 @@ const HistoryScr = () => {
           <TablesSection details={item.details} getTableName={getTableName} />
         )}
 
-        {/* Remaining Payment */}
-        {billStatus === BILL_STATUS.WAITING && (
+        {/* ✅ CHỈ HIỂN THỊ REMAINING PAYMENT KHI CẦN THIẾT */}
+        {billStatus === BILL_STATUS.WAITING && paymentInfo.showTimeStatus && (
           <RemainingPaymentSection
             item={item}
             onPayRemaining={handlePayRemaining}
           />
         )}
 
-        {/* ✅ Actions - CHỈ CHO WAITING BILLS */}
+        {/* ✅ Actions - CHỈ CHO WAITING BILLS VÀ CÓ HIỂN THỊ THỜI GIAN */}
         {billStatus === BILL_STATUS.WAITING && (
           <ActionButtons
             item={item}
             timeStatus={timeStatus}
+            paymentInfo={paymentInfo}
             onCancel={handleCancelBill}
             onArrived={handleArrived}
           />

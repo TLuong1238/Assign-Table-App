@@ -1,362 +1,374 @@
-import { supabase } from "../lib/supabase";
-import { createCartDetail } from './cartDetailService';
+import { supabase } from '../lib/supabase';
+import { PAYMENT_CONFIG, TimeUtils } from '../constants/paymentConfig';
 
-export const createBill = async (bill) => {
-    try {
-        console.log('createBill input:', bill);
-
-        const { data, error } = await supabase
-            .from('bills')
-            .insert([bill])
-            .select();
-
-        console.log('createBill response:', { data, error });
-
-        if (error) {
-            console.log('createBill error details: ', error);
-            return { success: false, msg: error.message || 'Không thể đặt bàn' };
-        }
-        return { success: true, data };
-    } catch (error) {
-        console.log('createBill catch error: ', error);
-        return { success: false, msg: error.message || 'Không thể đặt bàn' };
-    }
+// ✅ THÊM FUNCTION KIỂM TRA PAYMENT REQUIREMENT
+const getPaymentRequirement = (appointmentTime, cartPrice, isVip = false) => {
+  return TimeUtils.getPaymentRequirement(appointmentTime, cartPrice, isVip);
 };
 
-export const fetchBill = async () => {
-    try {
-        const { data, error } = await supabase
-            .from('bills')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        console.log('fetchBill data: ', data);
-        if (error) {
-            console.log('fetchBill error: ', error);
-            return { success: false, msg: 'Không thể lấy dữ liệu đặt bàn' };
-        }
-        return { success: true, data: data };
-    } catch (error) {
-        console.log('fetchBill error: ', error);
-        return { success: false, msg: 'Không thể lấy dữ liệu đặt bàn' };
+// ✅ SỬA FUNCTION TẠO BILL - THÊM LOGIC THỜI GIAN
+export const createBill = async (billData) => {
+  try {
+    console.log('📋 Creating bill with data:', billData);
+    
+    // ✅ KIỂM TRA VÀ XÁC ĐỊNH PAYMENT STATUS THEO THỜI GIAN
+    let finalBillData = { ...billData };
+    
+    if (billData.time && !billData.payment_status) {
+      const appointmentTime = new Date(billData.time);
+      const paymentReq = getPaymentRequirement(
+        appointmentTime, 
+        billData.price || 0, 
+        billData.payment_method === 'vip'
+      );
+      
+      finalBillData.payment_status = paymentReq.status;
+      
+      if (!billData.payment_method && paymentReq.method) {
+        finalBillData.payment_method = paymentReq.method;
+      }
+      
+      console.log('✅ Payment requirement determined:', paymentReq);
     }
-}
-
-export const fetchBillByTimeRange = async (time) => {
-    try {
-        const targetDateTime = new Date(time);
-
-        const startTime = new Date(targetDateTime.getTime() -  15 * 60 * 1000);
-        const endTime = new Date(targetDateTime.getTime() +  15 * 60 * 1000);
-
-        const { data, error } = await supabase
-            .from('bills')
-            .select('*')
-            .gte('time', startTime.toISOString())
-            .lte('time', endTime.toISOString())
-            .order('time', { ascending: true });
-
-        if (error) {
-            console.log('fetchBillByTimeRange error: ', error);
-            return { success: false, msg: 'Không thể lấy dữ liệu đặt bàn theo thời gian' };
+    
+    // ✅ XÁC ĐỊNH DEPOSIT AMOUNT THEO THỜI GIAN
+    if (finalBillData.time && typeof finalBillData.deposit_amount === 'undefined') {
+      const appointmentTime = new Date(finalBillData.time);
+      const hasFood = (finalBillData.price || 0) > 0;
+      const isVip = finalBillData.payment_method === 'vip';
+      
+      if (!TimeUtils.isDepositRequired(appointmentTime, isVip)) {
+        finalBillData.deposit_amount = 0;
+        console.log('⏰ No deposit required - appointment > 24h ahead');
+      } else {
+        // Giữ nguyên logic cũ cho trường hợp cần cọc
+        if (hasFood) {
+          finalBillData.deposit_amount = Math.max(
+            (finalBillData.price || 0) * PAYMENT_CONFIG.DEPOSIT_PERCENTAGE,
+            PAYMENT_CONFIG.MIN_DEPOSIT_AMOUNT
+          );
+        } else {
+          finalBillData.deposit_amount = PAYMENT_CONFIG.TABLE_DEPOSIT;
         }
-
-        return { success: true, data };
-    } catch (error) {
-        console.log('fetchBillByTimeRange error: ', error);
-        return { success: false, msg: 'Có lỗi xảy ra khi lấy dữ liệu đặt bàn' };
+        console.log('💰 Deposit required - appointment < 24h ahead');
+      }
     }
+    
+    console.log('📋 Final bill data:', finalBillData);
+    
+    const { data, error } = await supabase
+      .from('bills')
+      .insert([finalBillData])
+      .select();
+
+    if (error) {
+      console.error('❌ Error creating bill:', error);
+      return { success: false, msg: error.message, data: null };
+    }
+
+    console.log('✅ Bill created successfully:', data[0]?.id);
+    return { success: true, msg: 'Bill created successfully', data };
+  } catch (error) {
+    console.error('❌ Exception in createBill:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
 };
 
-// detail
-export const fetchDetailByBillIds = async (billIds) => {
-    try {
-        const { data, error } = await supabase
-            .from('detailBills')
-            .select('*')
-            .in('billId', billIds);
-
-        if (error) {
-            console.log('fetchDetailByBillIds error: ', error);
-            return { success: false, msg: 'Không thể lấy chi tiết bill' };
-        }
-        return { success: true, data };
-    } catch (error) {
-        console.log('fetchDetailByBillIds error: ', error);
-        return { success: false, msg: 'Có lỗi xảy ra khi lấy chi tiết bill' };
+// ✅ THÊM FUNCTION UPDATE BILL PAYMENT STATUS
+export const updateBillPaymentStatus = async (billId, paymentStatus, paymentMethod = null, paymentId = null) => {
+  try {
+    console.log(`📋 Updating bill ${billId} payment status to:`, paymentStatus);
+    
+    const updateData = {
+      payment_status: paymentStatus,
+      updated_at: new Date().toISOString()
+    };
+    
+    if (paymentMethod) {
+      updateData.payment_method = paymentMethod;
     }
+    
+    if (paymentId) {
+      updateData.payment_id = paymentId;
+    }
+    
+    const { data, error } = await supabase
+      .from('bills')
+      .update(updateData)
+      .eq('id', billId)
+      .select();
+
+    if (error) {
+      console.error('❌ Error updating bill payment status:', error);
+      return { success: false, msg: error.message, data: null };
+    }
+
+    console.log('✅ Bill payment status updated successfully');
+    return { success: true, msg: 'Bill payment status updated', data };
+  } catch (error) {
+    console.error('❌ Exception in updateBillPaymentStatus:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
+};
+
+// ✅ THÊM FUNCTION KIỂM TRA BILL CÓ CẦN THANH TOÁN KHÔNG
+export const checkBillPaymentRequirement = async (billId) => {
+  try {
+    const { data, error } = await supabase
+      .from('bills')
+      .select('time, price, payment_method, payment_status')
+      .eq('id', billId)
+      .single();
+
+    if (error) {
+      console.error('❌ Error fetching bill for payment check:', error);
+      return { success: false, msg: error.message, data: null };
+    }
+
+    const appointmentTime = new Date(data.time);
+    const isVip = data.payment_method === 'vip';
+    const paymentReq = getPaymentRequirement(appointmentTime, data.price || 0, isVip);
+    
+    return { 
+      success: true, 
+      msg: 'Payment requirement checked', 
+      data: {
+        ...data,
+        paymentRequirement: paymentReq
+      }
+    };
+  } catch (error) {
+    console.error('❌ Exception in checkBillPaymentRequirement:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
 };
 
 export const createDetail = async (billId, tableIds, peopleCount) => {
-    try {
-        let details = [];
-        let remainingPeople = peopleCount;
-        let tableIndex = 0;
-
-        while (remainingPeople > 0 && tableIndex < tableIds.length) {
-            const currentTableId = tableIds[tableIndex];
-
-            const peopleForThisTable = Math.min(remainingPeople, 6);
-
-            const detailsNeeded = Math.ceil(peopleForThisTable / 6);
-
-            for (let i = 0; i < detailsNeeded; i++) {
-                details.push({
-                    billId,
-                    tableId: currentTableId,
-                });
-            }
-
-            remainingPeople -= peopleForThisTable;
-            tableIndex++;
-        }
-
-        const { data, error } = await supabase
-            .from('detailBills')
-            .insert(details)
-            .select();
-
-        if (error) {
-            console.log('createDetail error: ', error);
-            return { success: false, msg: 'Không thể tạo chi tiết bill' };
-        }
-        return { success: true, data };
-    } catch (error) {
-        console.log('createDetail error: ', error);
-        return { success: false, msg: 'Có lỗi xảy ra khi tạo chi tiết bill' };
+  try {
+    console.log('📋 Creating detail bills for:', { billId, tableIds, peopleCount });
+    
+    if (!Array.isArray(tableIds) || tableIds.length === 0) {
+      return { success: false, msg: 'No tables provided', data: null };
     }
+
+    const detailBills = tableIds.map(tableId => ({
+      billId: billId,
+      tableId: tableId,
+      peopleCount: Math.ceil(peopleCount / tableIds.length)
+    }));
+
+    const { data, error } = await supabase
+      .from('detailBills')
+      .insert(detailBills)
+      .select();
+
+    if (error) {
+      console.error('❌ Error creating detail bills:', error);
+      return { success: false, msg: error.message, data: null };
+    }
+
+    console.log('✅ Detail bills created successfully');
+    return { success: true, msg: 'Detail bills created successfully', data };
+  } catch (error) {
+    console.error('❌ Exception in createDetail:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
 };
 
-export const fetchBillByUser = async (userId) => {
-    try {
-        const { data, error } = await supabase
-            .from('bills')
-            .select('*')
-            .eq('userId', userId)
-            .order('created_at', { ascending: false });
+export const fetchBillByTimeRange = async (targetTime) => {
+  try {
+    const targetDate = new Date(targetTime);
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
 
-        if (error) {
-            console.log('fetchBillByUser error: ', error);
-            return { success: false, msg: 'Không thể lấy dữ liệu bill của user' };
-        }
-        return { success: true, data };
-    } catch (error) {
-        console.log('fetchBillByUser error: ', error);
-        return { success: false, msg: 'Có lỗi xảy ra khi lấy bill của user' };
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*')
+      .gte('time', startOfDay.toISOString())
+      .lte('time', endOfDay.toISOString())
+      .order('time', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error fetching bills by time range:', error);
+      return { success: false, msg: error.message, data: [] };
     }
+
+    return { success: true, msg: 'Bills fetched successfully', data: data || [] };
+  } catch (error) {
+    console.error('❌ Exception in fetchBillByTimeRange:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: [] };
+  }
 };
 
-export const updateBill = async (billId, updateData) => {
-    try {
-        const { data, error } = await supabase
-            .from('bills')
-            .update(updateData)
-            .eq('id', billId)
-            .select();
-
-        if (error) {
-            console.log('updateBill error: ', error);
-            return { success: false, msg: 'Không thể cập nhật bill' };
-        }
-        return { success: true, data };
-    } catch (error) {
-        console.log('updateBill error: ', error);
-        return { success: false, msg: 'Có lỗi xảy ra khi cập nhật bill' };
+export const fetchDetailByBillIds = async (billIds) => {
+  try {
+    if (!Array.isArray(billIds) || billIds.length === 0) {
+      return { success: true, msg: 'No bill IDs provided', data: [] };
     }
+
+    const { data, error } = await supabase
+      .from('detailBills')
+      .select('*')
+      .in('billId', billIds);
+
+    if (error) {
+      console.error('❌ Error fetching detail bills:', error);
+      return { success: false, msg: error.message, data: [] };
+    }
+
+    return { success: true, msg: 'Detail bills fetched successfully', data: data || [] };
+  } catch (error) {
+    console.error('❌ Exception in fetchDetailByBillIds:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: [] };
+  }
 };
 
-//updateBills expired
-export const updateExpiredBills = async () => {
-    try {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        
-        console.log('Checking for expired bills before:', today.toISOString());
+// ✅ THÊM FUNCTION FETCH BILLS WITH PAYMENT REQUIREMENT CHECK
+export const fetchBillsWithPaymentCheck = async (userId) => {
+  try {
+    console.log('📋 Fetching bills with payment requirement check for user:', userId);
+    
+    const { data, error } = await supabase
+      .from('bills')
+      .select(`
+        *,
+        details:detailBills(
+          tableId
+        )
+      `)
+      .eq('userId', userId)
+      .order('created_at', { ascending: false });
 
-        const { data: expiredBills, error: fetchError } = await supabase
-            .from('bills')
-            .select('*')
-            .eq('state', 'in_order')
-            .lt('time', today.toISOString());
-
-        if (fetchError) {
-            console.error('Error fetching expired bills:', fetchError);
-            return { success: false, msg: fetchError.message };
-        }
-
-        if (!expiredBills || expiredBills.length === 0) {
-            console.log('No expired bills found');
-            return { success: true, data: [] };
-        }
-
-        console.log(`Found ${expiredBills.length} expired bills:`, expiredBills);
-
-        const billIds = expiredBills.map(bill => bill.id);
-        
-        const { data: updatedBills, error: updateError } = await supabase
-            .from('bills')
-            .update({
-                state: 'cancelled',
-                visit: 'not_visited',
-                updated_at: new Date().toISOString()
-            })
-            .in('id', billIds)
-            .select();
-
-        if (updateError) {
-            console.error('Error updating expired bills:', updateError);
-            return { success: false, msg: updateError.message };
-        }
-
-        console.log(`Successfully updated ${updatedBills.length} expired bills`);
-        
-        return { 
-            success: true, 
-            data: updatedBills,
-            count: updatedBills.length 
-        };
-
-    } catch (error) {
-        console.error('Error in updateExpiredBills:', error);
-        return { success: false, msg: error.message };
+    if (error) {
+      console.error('❌ Error fetching bills:', error);
+      return { success: false, msg: error.message, data: [] };
     }
+
+    // ✅ KIỂM TRA PAYMENT REQUIREMENT CHO MỖI BILL
+    const billsWithPaymentCheck = data.map(bill => {
+      const appointmentTime = new Date(bill.time);
+      const isVip = bill.payment_method === 'vip';
+      const paymentReq = getPaymentRequirement(appointmentTime, bill.price || 0, isVip);
+      
+      return {
+        ...bill,
+        paymentRequirement: paymentReq,
+        hoursUntilAppointment: TimeUtils.calculateHoursUntilAppointment(appointmentTime)
+      };
+    });
+
+    console.log('✅ Bills fetched with payment requirement check');
+    return { 
+      success: true, 
+      msg: 'Bills fetched successfully', 
+      data: billsWithPaymentCheck 
+    };
+  } catch (error) {
+    console.error('❌ Exception in fetchBillsWithPaymentCheck:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: [] };
+  }
 };
 
-export const checkAndUpdateExpiredBills = async () => {
-    try {
-        console.log('=== STARTING EXPIRED BILLS CHECK ===');
-        
-        const result = await updateExpiredBills();
-        
-        if (result.success && result.count > 0) {
-            console.log(` Auto-cancelled ${result.count} expired bills`);
-            
-            // Alert.alert('Thông báo', `Đã tự động hủy ${result.count} đơn đặt bàn quá hạn`);
-        }
-        
-        console.log('=== EXPIRED BILLS CHECK COMPLETED ===');
-        return result;
-        
-    } catch (error) {
-        console.error('Error in checkAndUpdateExpiredBills:', error);
-        return { success: false, msg: error.message };
+// ✅ THÊM FUNCTION AUTO UPDATE PAYMENT STATUS THEO THỜI GIAN
+export const autoUpdatePaymentStatusByTime = async () => {
+  try {
+    console.log('🔄 Running auto update payment status by time...');
+    
+    // Lấy tất cả bills có payment_status = 'no_payment_required' và thời gian < 24h
+    const { data: bills, error } = await supabase
+      .from('bills')
+      .select('id, time, price, payment_method, payment_status')
+      .eq('payment_status', PAYMENT_CONFIG.BILL_PAYMENT_STATUS.NO_PAYMENT_REQUIRED)
+      .eq('state', 'in_order');
+
+    if (error) {
+      console.error('❌ Error fetching bills for auto update:', error);
+      return { success: false, msg: error.message, data: null };
     }
+
+    let updatedCount = 0;
+    
+    for (const bill of bills) {
+      const appointmentTime = new Date(bill.time);
+      const hoursUntil = TimeUtils.calculateHoursUntilAppointment(appointmentTime);
+      
+      // Nếu còn < 24h và chưa thanh toán thì cần chuyển sang pending
+      if (hoursUntil < PAYMENT_CONFIG.TIME_RULES.NO_DEPOSIT_HOURS) {
+        const updateResult = await updateBillPaymentStatus(
+          bill.id, 
+          PAYMENT_CONFIG.BILL_PAYMENT_STATUS.PENDING
+        );
+        
+        if (updateResult.success) {
+          updatedCount++;
+          console.log(`✅ Updated bill ${bill.id} from no_payment_required to pending`);
+        }
+      }
+    }
+    
+    console.log(`✅ Auto update completed. Updated ${updatedCount} bills.`);
+    return { 
+      success: true, 
+      msg: `Auto update completed. Updated ${updatedCount} bills.`, 
+      data: { updatedCount } 
+    };
+  } catch (error) {
+    console.error('❌ Exception in autoUpdatePaymentStatusByTime:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
 };
 
-// ✅ THÊM FUNCTION TẠO BILL TỪ PAYMENT DATA
-export const createBillFromPayment = async (payment) => {
-    try {
-        console.log('Creating bill from payment:', payment.id);
-
-        const billData = payment.bill_data;
-        if (!billData) {
-            throw new Error('No bill data found in payment');
-        }
-
-        // ✅ 1. TẠO BILL RECORD - THEO ĐÚNG SCHEMA
-        const billInsertData = {
-            userId: payment.userid,                                    // ✅ uuid
-            name: billData.name,                                       // ✅ text NOT NULL
-            phone: billData.phone,                                     // ✅ text NOT NULL  
-            time: billData.time,                                       // ✅ timestamp
-            num_people: billData.peopleCount || billData.num_people || 1, // ✅ numeric NOT NULL
-            note: billData.note || '',                                 // ✅ text
-            price: billData.totalAmount || billData.price || payment.amount, // ✅ numeric
-            
-            // ✅ Payment fields theo schema
-            payment_status: payment.payment_type === 'deposit' ? 'deposit_paid' : 'fully_paid', // ✅ CHECK constraint
-            payment_method: 'vnpay',                                   // ✅ CHECK constraint
-            deposit_amount: payment.payment_type === 'deposit' ? payment.amount : 0, // ✅ numeric
-            total_amount: billData.totalAmount || billData.price || payment.amount,   // ✅ numeric
-            payment_id: payment.id.toString(),                         // ✅ text
-            
-            // ✅ Default values theo schema
-            state: 'in_order',                                         // ✅ CHECK constraint
-            visit: 'on_process',                                       // ✅ default value
-            created_at: new Date().toISOString(),                      // ✅ timestamp
-            updated_at: new Date().toISOString()                       // ✅ timestamp
-        };
-
-        console.log('Creating bill with data:', billInsertData);
-
-        // ✅ TẠO BILL
-        const billResult = await createBill(billInsertData);
-        
-        if (!billResult.success) {
-            throw new Error(billResult.msg);
-        }
-
-        const bill = billResult.data[0];
-        console.log('✅ Bill created successfully:', bill);
-
-        // ✅ 2. TẠO DETAIL BILLS (CHO tableIds)
-        if (billData.tableIds && billData.tableIds.length > 0) {
-            console.log('Creating detail bills for tables:', billData.tableIds);
-            
-            const detailResult = await createDetail(
-                bill.id, 
-                billData.tableIds, 
-                billData.peopleCount || billData.num_people || 1
-            );
-            
-            if (!detailResult.success) {
-                console.error('Create detail bills failed:', detailResult.msg);
-            } else {
-                console.log('✅ Detail bills created successfully:', detailResult.data);
-            }
-        }
-
-        // ✅ 3. TẠO CART DETAILS (CHO cartDetails)
-        if (billData.cartDetails && billData.cartDetails.length > 0) {
-            console.log('Creating cart details:', billData.cartDetails);
-            
-            const cartResult = await createCartDetail(bill.id, billData.cartDetails);
-            
-            if (!cartResult.success) {
-                console.error('Create cart details failed:', cartResult.msg);
-            } else {
-                console.log('✅ Cart details created successfully:', cartResult.data);
-                
-                // ✅ Cập nhật lại tổng tiền bill sau khi tạo cart details
-                const cartTotal = billData.cartDetails.reduce((sum, item) => 
-                    sum + (item.price * item.num), 0
-                );
-                
-                if (cartTotal > 0) {
-                    await updateBill(bill.id, { price: cartTotal });
-                    console.log('✅ Bill price updated with cart total:', cartTotal);
-                }
-            }
-        }
-
-        // ✅ 4. CẬP NHẬT PAYMENT VỚI BILL ID
-        const { error: updatePaymentError } = await supabase
-            .from('payments')
-            .update({ billid: bill.id })                               // ✅ integer foreign key
-            .eq('id', payment.id);
-
-        if (updatePaymentError) {
-            console.error('Update payment with bill_id error:', updatePaymentError);
-            // Không throw error vì bill đã tạo thành công
-        }
-
-        console.log('✅ Bill creation completed successfully:', {
-            billId: bill.id,
-            paymentId: payment.id,
-            hasTableDetails: !!(billData.tableIds && billData.tableIds.length > 0),
-            hasCartDetails: !!(billData.cartDetails && billData.cartDetails.length > 0)
-        });
-
-        return { 
-            success: true, 
-            data: bill 
-        };
-
-    } catch (error) {
-        console.error('Create bill from payment error:', error);
-        return { 
-            success: false, 
-            message: error.message || 'Failed to create bill'
-        };
+// ✅ THÊM FUNCTION VALIDATE BILL BEFORE PAYMENT
+export const validateBillBeforePayment = async (billId) => {
+  try {
+    const checkResult = await checkBillPaymentRequirement(billId);
+    
+    if (!checkResult.success) {
+      return checkResult;
     }
+    
+    const { paymentRequirement, payment_status, time } = checkResult.data;
+    const appointmentTime = new Date(time);
+    const hoursUntil = TimeUtils.calculateHoursUntilAppointment(appointmentTime);
+    
+    // Kiểm tra bill có còn valid để thanh toán không
+    if (hoursUntil < 0) {
+      return {
+        success: false,
+        msg: 'Bill has expired - appointment time has passed',
+        data: { expired: true }
+      };
+    }
+    
+    // Kiểm tra payment requirement có thay đổi không
+    if (!paymentRequirement.required && payment_status !== PAYMENT_CONFIG.BILL_PAYMENT_STATUS.NO_PAYMENT_REQUIRED) {
+      return {
+        success: false,
+        msg: 'Payment requirement has changed - no payment needed',
+        data: { paymentRequirementChanged: true, newRequirement: paymentRequirement }
+      };
+    }
+    
+    return {
+      success: true,
+      msg: 'Bill is valid for payment',
+      data: {
+        valid: true,
+        paymentRequirement,
+        hoursUntil
+      }
+    };
+  } catch (error) {
+    console.error('❌ Exception in validateBillBeforePayment:', error);
+    return { success: false, msg: error.message || 'Unknown error', data: null };
+  }
+};
+
+// Export thêm các utilities
+export const BillUtils = {
+  getPaymentRequirement,
+  ...TimeUtils
 };

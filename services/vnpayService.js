@@ -1,24 +1,24 @@
 // services/vnpayService.js
 import { supabase } from '../lib/supabase';
-import { 
-  createVNPayUrl, 
-  validateVNPayResponse, 
+import {
+  createVNPayUrl,
+  validateVNPayResponse,
   formatOrderInfo,
-  generateOrderId 
+  generateOrderId
 } from '../helper/vnpayHelper';
 import { parseHttpBinResponse } from '../constants/vnpayConfig';
 import { PAYMENT_CONFIG } from '../constants/paymentConfig';
-import { createBillFromPayment } from './billService'; // ✅ IMPORT TỪ billService
+import { createBillFromPayment } from './billService';
 
-// ✅ Tạo thanh toán VNPay
+// ✅ Tạo thanh toán VNPay - XÓA VIP VALIDATION
 export const createVNPayPayment = async (paymentData) => {
   // ✅ TẮT MOCK MODE ĐỂ TEST THẬT
-  const MOCK_MODE = false; // ← TẮT MOCK
-  
+  const MOCK_MODE = false;
+
   if (MOCK_MODE) {
     console.log('🎭 Mock VNPay Payment');
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     return {
       success: true,
       data: {
@@ -29,42 +29,53 @@ export const createVNPayPayment = async (paymentData) => {
       }
     };
   }
-  
+
   try {
     const {
       userId,
       billData,
       amount,
-      paymentType = 'deposit' // 'deposit' hoặc 'full'
+      paymentType = 'deposit' // 'deposit', 'full', 'remaining'
     } = paymentData;
 
     console.log('Creating VNPay payment:', { userId, amount, paymentType });
+
+    // ✅ XÓA VIP VALIDATION - KHÔNG CẦN KIỂM TRA VIP NỮA
+    // Thanh toán phần còn lại không phân biệt VIP hay không
 
     // Validate input
     if (!userId || !billData || !amount || amount <= 0) {
       throw new Error('Invalid payment data');
     }
 
+    // ✅ VALIDATE AMOUNT LOGIC CHO DEPOSIT (GIỮ LẠI)
+    if (paymentType === 'deposit') {
+      const hasFood = billData.cartDetails?.length > 0;
+      if (!hasFood && amount !== PAYMENT_CONFIG.TABLE_DEPOSIT) {
+        console.warn('⚠️ Table booking should have 30k deposit, got:', amount);
+      }
+    }
+
     // Tạo order ID unique
     const orderId = generateOrderId();
-    
+
     // Tạo thông tin đơn hàng cho VNPay
     const orderInfo = formatOrderInfo(billData);
-    
-    // ✅ Lưu thông tin payment vào database trước - THEO SCHEMA
+
+    // ✅ Lưu thông tin payment vào database trước
     const { data: payment, error: insertError } = await supabase
       .from('payments')
       .insert([
         {
-          orderid: orderId,                                    // ✅ text NOT NULL UNIQUE
-          userid: userId,                                      // ✅ uuid NOT NULL
-          amount: amount,                                      // ✅ numeric NOT NULL CHECK > 0
-          payment_type: paymentType === 'remaining' ? 'deposit' : paymentType,                     // ✅ CHECK constraint
-          payment_method: 'vnpay',                            // ✅ CHECK constraint  
-          status: 'pending',                                  // ✅ CHECK constraint
-          bill_data: billData,                                // ✅ jsonb
-          created_at: new Date().toISOString(),               // ✅ timestamp NOT NULL
-          updated_at: new Date().toISOString()                // ✅ timestamp NOT NULL
+          orderid: orderId,
+          userid: userId,
+          amount: amount,
+          payment_type: paymentType === 'remaining' ? 'full' : paymentType,
+          payment_method: 'vnpay',
+          status: 'pending',
+          bill_data: billData,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         }
       ])
       .select('*')
@@ -77,7 +88,7 @@ export const createVNPayPayment = async (paymentData) => {
 
     console.log('Payment created in database:', payment);
 
-    // ✅ Tạo VNPay URL với function đã fix
+    // ✅ Tạo VNPay URL
     const vnpayResult = createVNPayUrl({
       amount,
       orderInfo,
@@ -116,22 +127,22 @@ export const createVNPayPayment = async (paymentData) => {
   }
 };
 
-// ✅ XỬ LÝ KẾT QUẢ TỪNG FORMAT (httpbin hoặc normal)
+// ✅ XỬ LÝ KẾT QUẢ TỪNG FORMAT - XÓA VIP CHECK
 export const handleVNPayReturn = async (returnParams, isHttpBin = false) => {
   try {
-    console.log('Handling VNPay return:', { returnParams, isHttpBin });
+    console.log('🔄 Handling VNPay return:', { returnParams, isHttpBin });
 
     let vnpayData;
-    
+
     if (isHttpBin) {
-      // ✅ Xử lý HTTPBin response
+      // ✅ PARSE HTTPBIN RESPONSE
       const parseResult = parseHttpBinResponse(returnParams);
       if (!parseResult.success) {
         throw new Error(`Invalid HTTPBin response: ${parseResult.message}`);
       }
       vnpayData = parseResult.data;
     } else {
-      // ✅ Xử lý normal VNPay response
+      // ✅ VALIDATION THÔNG THƯỜNG
       const validation = validateVNPayResponse(returnParams);
       if (!validation.success) {
         throw new Error(`Invalid VNPay response: ${validation.message}`);
@@ -141,89 +152,228 @@ export const handleVNPayReturn = async (returnParams, isHttpBin = false) => {
 
     const { txnRef, amount, isSuccess, responseCode, transactionStatus } = vnpayData;
 
-    // Tìm payment trong database bằng orderId
-    const orderId = txnRef;
-    const { data: payment, error: findError } = await supabase
+    console.log('💳 VNPay data extracted:', { txnRef, amount, isSuccess });
+
+    // ✅ TÌM PAYMENT RECORD
+    const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .select('*')
-      .eq('orderid', orderId)
+      .eq('orderid', txnRef)
       .single();
 
-    if (findError) {
-      console.error('Find payment error:', findError);
-      throw new Error(`Payment not found: ${orderId}`);
+    if (paymentError) {
+      console.error('❌ Payment not found:', paymentError);
+      throw new Error('Payment record not found');
     }
 
-    console.log('Found payment:', payment);
+    console.log('✅ Found payment record:', payment.id);
+    console.log('📊 Payment type:', payment.payment_type);
+    console.log('📊 Payment bill_data:', payment.bill_data);
 
-    // Xác định trạng thái payment
-    let newStatus = 'failed';
+    // ✅ XÁC ĐỊNH LOẠI PAYMENT
+    const isRemainingPayment = payment.bill_data?.remainingAmount ||
+      payment.bill_data?.existingPaymentId;
+
+    console.log('🔍 Is remaining payment:', isRemainingPayment);
+
     if (isSuccess) {
-      newStatus = 'completed';
-    } else if (responseCode === '24') { // User cancelled
-      newStatus = 'cancelled';
-    }
+      console.log('✅ Processing successful payment...');
 
-    // ✅ Cập nhật payment status - THEO SCHEMA
-    const { data: updatedPayment, error: updateError } = await supabase
-      .from('payments')
-      .update({
-        status: newStatus,                                     // ✅ CHECK constraint
-        vnp_response_code: responseCode,                       // ✅ text
-        vnp_transaction_status: transactionStatus,             // ✅ text
-        vnp_txn_ref: txnRef,                                  // ✅ text
-        vnpay_response: isHttpBin ? returnParams : returnParams, // ✅ jsonb
-        completed_at: new Date().toISOString(),                // ✅ timestamp
-        updated_at: new Date().toISOString()                   // ✅ timestamp NOT NULL
-      })
-      .eq('id', payment.id)
-      .select('*')
-      .single();
+      if (isRemainingPayment && payment.bill_data?.existingPaymentId) {
+        // ✅ XỬ LÝ REMAINING PAYMENT - UPDATE PAYMENT CŨ
+        console.log('🔄 Processing remaining payment - updating existing payment...');
 
-    if (updateError) {
-      console.error('Update payment error:', updateError);
-      throw new Error(`Failed to update payment: ${updateError.message}`);
-    }
+        const existingPaymentId = payment.bill_data.existingPaymentId;
 
-    // ✅ Nếu thanh toán thành công, tạo bill
-    let billResult = null;
-    if (newStatus === 'completed') {
-      billResult = await createBillFromPayment(updatedPayment);
-      
-      if (!billResult.success) {
-        console.error('Create bill failed:', billResult.message);
-        // Không throw error, thanh toán đã thành công
+        // 1. UPDATE PAYMENT CŨ THÀNH FULL
+        const { error: updateOldPaymentError } = await supabase
+          .from('payments')
+          .update({
+            payment_type: 'full',
+            amount: payment.bill_data.totalAmount || payment.amount,
+            payment_method: 'vnpay',
+            updated_at: new Date().toISOString(),
+            bill_data: {
+              ...payment.bill_data,
+              remainingPaymentId: payment.id,
+              remainingPaymentDate: new Date().toISOString(),
+              remainingAmount: payment.bill_data.remainingAmount
+            }
+          })
+          .eq('id', existingPaymentId);
+
+        if (updateOldPaymentError) {
+          console.error('❌ Error updating old payment:', updateOldPaymentError);
+          throw new Error('Failed to update original payment');
+        }
+
+        console.log('✅ Original payment updated to full');
+
+        // 2. UPDATE PAYMENT HIỆN TẠI (REMAINING) THÀNH COMPLETED
+        const { error: updateCurrentPaymentError } = await supabase
+          .from('payments')
+          .update({
+            status: 'completed',
+            vnp_response_code: responseCode,
+            vnp_transaction_status: transactionStatus,
+            vnpay_response: vnpayData.rawData,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', payment.id);
+
+        if (updateCurrentPaymentError) {
+          console.error('❌ Error updating current payment:', updateCurrentPaymentError);
+          throw new Error('Failed to update current payment');
+        }
+
+        console.log('✅ Current payment updated to completed');
+
+        // 3. UPDATE BILL STATUS
+        if (payment.billid) {
+          const { error: updateBillError } = await supabase
+            .from('bills')
+            .update({
+              payment_status: 'fully_paid',
+              payment_method: 'vnpay',
+              payment_id: existingPaymentId.toString(), // ✅ DÙNG ID CỦA PAYMENT GỐC
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', payment.billid);
+
+          if (updateBillError) {
+            console.error('❌ Error updating bill:', updateBillError);
+            throw new Error('Failed to update bill status');
+          }
+
+          console.log('✅ Bill updated to fully_paid');
+        }
+
+        // 4. RETURN SUCCESS DATA
+        return {
+          success: true,
+          data: {
+            payment: payment,
+            originalPayment: { id: existingPaymentId },
+            bill: payment.billid ? { id: payment.billid } : null,
+            vnpayData: vnpayData,
+            isRemainingPayment: true,
+            status: 'completed',
+            message: 'Remaining payment completed successfully'
+          }
+        };
+
+      } else {
+        // ✅ XỬ LÝ DEPOSIT PAYMENT THÔNG THƯỜNG
+        console.log('🔄 Processing normal deposit payment...');
+
+        const { data: updatedPayment, error: updateError } = await supabase
+          .from('payments')
+          .update({
+            status: 'completed',
+            vnp_response_code: responseCode,
+            vnp_transaction_status: transactionStatus,
+            vnpay_response: vnpayData.rawData,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', payment.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error('❌ Update payment error:', updateError);
+          throw new Error('Failed to update payment status');
+        }
+
+        console.log('✅ Payment updated successfully:', updatedPayment.id);
+
+        // UPDATE BILL STATUS
+        let billResult = null;
+        if (payment.billid) {
+          let billStatus = 'fully_paid';
+          if (payment.payment_type === 'deposit') {
+            billStatus = 'deposit_paid';
+          }
+
+          billResult = await supabase
+            .from('bills')
+            .update({
+              payment_status: billStatus,
+              payment_id: payment.id.toString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', payment.billid)
+            .select()
+            .single();
+
+          if (billResult.error) {
+            console.error('❌ Update bill error:', billResult.error);
+          } else {
+            console.log('✅ Bill updated successfully:', billResult.data?.id);
+          }
+        }
+
+        return {
+          success: true,
+          data: {
+            payment: updatedPayment,
+            bill: billResult?.data || null,
+            vnpayData,
+            isRemainingPayment: false,
+            status: 'completed',
+            message: vnpayData.message
+          }
+        };
       }
-    }
 
-    return {
-      success: true,
-      data: {
-        payment: updatedPayment,
-        bill: billResult?.data || null,
-        vnpayData,
-        status: newStatus,
-        message: vnpayData.message
+    } else {
+      // ✅ PAYMENT FAILED
+      console.log('❌ Processing failed payment...');
+
+      const { error: updatePaymentError } = await supabase
+        .from('payments')
+        .update({
+          status: 'failed',
+          vnp_response_code: responseCode,
+          vnp_transaction_status: transactionStatus,
+          vnpay_response: vnpayData.rawData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', payment.id);
+
+      if (updatePaymentError) {
+        console.error('❌ Update payment error:', updatePaymentError);
       }
-    };
+
+      return {
+        success: false,
+        message: vnpayData.message || 'Payment failed',
+        data: {
+          payment: payment,
+          vnpayData: vnpayData,
+          isRemainingPayment: isRemainingPayment,
+          status: 'failed'
+        }
+      };
+    }
 
   } catch (error) {
-    console.error('Handle VNPay return error:', error);
+    console.error('❌ Handle VNPay return error:', error);
     return {
       success: false,
-      message: error.message || 'Failed to handle VNPay return'
+      message: error.message || 'Failed to process VNPay return'
     };
   }
 };
 
-// ✅ HELPER - XỬ LÝ KẾT QUẢ TỪ WEBVIEW
+// ✅ XỬ LÝ KẾT QUẢ TỪ WEBVIEW
 export const processWebViewResult = async (webViewResult) => {
   try {
     console.log('🔄 Processing WebView result:', webViewResult);
-    
-    // ✅ Gọi service để xử lý và lưu database
+
     const serviceResult = await handleVNPayReturn(webViewResult.rawData, false);
-    
+
     if (serviceResult.success) {
       console.log('✅ WebView result processed successfully');
       return {
@@ -237,7 +387,7 @@ export const processWebViewResult = async (webViewResult) => {
     } else {
       throw new Error(serviceResult.message);
     }
-    
+
   } catch (error) {
     console.error('❌ Error processing WebView result:', error);
     return {
@@ -246,9 +396,6 @@ export const processWebViewResult = async (webViewResult) => {
     };
   }
 };
-
-// ✅ XÓA createBillFromPayment CŨ - DÙNG TỪ billService
-// const createBillFromPayment = async (payment) => { ... } // ← XÓA FUNCTION NÀY
 
 // ✅ Lấy thông tin payment theo order ID
 export const getPaymentByOrderId = async (orderId) => {
@@ -319,11 +466,11 @@ export const cancelPayment = async (paymentId, reason = 'User cancelled') => {
       .update({
         status: 'cancelled',
         completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),                  // ✅ THÊM updated_at
+        updated_at: new Date().toISOString(),
         vnpay_response: { cancelled_reason: reason }
       })
       .eq('id', paymentId)
-      .eq('status', 'pending') // Chỉ cancel được payment đang pending
+      .eq('status', 'pending')
       .select('*')
       .single();
 

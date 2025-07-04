@@ -1,48 +1,60 @@
 // constants/paymentConfig.js
 export const PAYMENT_CONFIG = {
   // ✅ Deposit Settings
-  DEPOSIT_PERCENTAGE: 0.3,        // 30% cọc
-  MIN_DEPOSIT_AMOUNT: 50000,      // Cọc tối thiểu 50k
-  MAX_DEPOSIT_AMOUNT: 5000000,    // Cọc tối đa 5 triệu
+  DEPOSIT_PERCENTAGE: 0.3,
+  MIN_DEPOSIT_AMOUNT: 50000,
+  MAX_DEPOSIT_AMOUNT: 5000000,
+  TABLE_DEPOSIT: 30000,
   
   // ✅ Payment Types
   PAYMENT_TYPES: {
-    DEPOSIT: 'deposit',           // Thanh toán cọc
-    FULL: 'full',                // Thanh toán đầy đủ
-    COUNTER: 'counter'           // Thanh toán tại quầy
+    DEPOSIT: 'deposit',
+    FULL: 'full',
+    COUNTER: 'counter'
   },
   
   // ✅ Payment Methods
   PAYMENT_METHODS: {
-    VNPAY: 'vnpay',              // VNPay
-    COUNTER: 'counter',          // Tại quầy
-    CASH: 'cash'                 // Tiền mặt
+    VNPAY: 'vnpay',
+    COUNTER: 'counter',
+    CASH: 'cash',
+    VIP: 'vip'
   },
   
   // ✅ Payment Status
   PAYMENT_STATUS: {
-    PENDING: 'pending',          // Chờ thanh toán
-    PROCESSING: 'processing',    // Đang xử lý
-    COMPLETED: 'completed',      // Hoàn thành
-    FAILED: 'failed',           // Thất bại
-    CANCELLED: 'cancelled'       // Đã hủy
+    PENDING: 'pending',
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+    CANCELLED: 'cancelled'
   },
   
-  // ✅ Bill Payment Status
+  // ✅ Bill Payment Status - THÊM TRẠNG THÁI MỚI
   BILL_PAYMENT_STATUS: {
-    PENDING: 'pending',          // Chờ thanh toán
-    DEPOSIT_PAID: 'deposit_paid', // Đã cọc
-    FULLY_PAID: 'fully_paid',    // Đã thanh toán đầy đủ
-    COUNTER_PAYMENT: 'counter_payment' // Thanh toán tại quầy
+    PENDING: 'pending',
+    DEPOSIT_PAID: 'deposit_paid',
+    FULLY_PAID: 'fully_paid',
+    COUNTER_PAYMENT: 'counter_payment',
+    PENDING_COUNTER: 'pending_counter',    
+    DEPOSIT_VIP: 'deposit_vip'
   },
   
-  // ✅ Order ID Settings
-  ORDER_ID_PREFIX: 'BUNCHAO_',   // Prefix cho order ID
-  ORDER_ID_LENGTH: 20,           // Độ dài order ID
+  // ✅ VIP Settings
+  VIP_CONFIG: {
+    ROLE: 'vip',
+    DEPOSIT_AMOUNT: 0,
+    PAYMENT_STATUS: 'deposit_paid',
+    PAYMENT_METHOD: 'vip'
+  },
+  
+  // ✅ ORDER ID Settings
+  ORDER_ID_PREFIX: 'BUNCHAO_',
+  ORDER_ID_LENGTH: 20,
   
   // ✅ Timeout Settings
-  PAYMENT_TIMEOUT: 15 * 60 * 1000, // 15 phút timeout
-  VNPAY_TIMEOUT: 15,              // 15 phút cho VNPay
+  PAYMENT_TIMEOUT: 15 * 60 * 1000,
+  VNPAY_TIMEOUT: 15,
   
   // ✅ Currency
   CURRENCY: {
@@ -57,7 +69,15 @@ export const formatCurrency = (amount) => {
   return new Intl.NumberFormat(PAYMENT_CONFIG.CURRENCY.LOCALE).format(amount);
 };
 
-export const calculateDepositAmount = (totalAmount) => {
+export const calculateDepositAmount = (totalAmount, hasFood = false, isVip = false) => {
+  if (isVip) {
+    return PAYMENT_CONFIG.VIP_CONFIG.DEPOSIT_AMOUNT;
+  }
+  
+  if (!hasFood || totalAmount === 0) {
+    return PAYMENT_CONFIG.TABLE_DEPOSIT;
+  }
+  
   const depositAmount = Math.round(totalAmount * PAYMENT_CONFIG.DEPOSIT_PERCENTAGE);
   return Math.max(
     PAYMENT_CONFIG.MIN_DEPOSIT_AMOUNT, 
@@ -69,4 +89,29 @@ export const generateOrderId = () => {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
   return `${PAYMENT_CONFIG.ORDER_ID_PREFIX}${timestamp}_${random}`;
+};
+
+export const isVipUser = (user) => {
+  return user?.role === PAYMENT_CONFIG.VIP_CONFIG.ROLE;
+};
+
+export const getVipBillData = (baseData) => ({
+  ...baseData,
+  payment_status: PAYMENT_CONFIG.VIP_CONFIG.PAYMENT_STATUS,
+  payment_method: PAYMENT_CONFIG.VIP_CONFIG.PAYMENT_METHOD,
+  deposit_amount: PAYMENT_CONFIG.VIP_CONFIG.DEPOSIT_AMOUNT
+});
+
+export const getPaymentAmountInfo = (cartPrice, hasFood, isVip) => {
+  const totalAmount = cartPrice || 0;
+  const depositAmount = calculateDepositAmount(totalAmount, hasFood, isVip);
+  
+  return {
+    totalAmount,
+    depositAmount,
+    remainingAmount: totalAmount - depositAmount,
+    hasFood,
+    isVip,
+    isTableBookingOnly: !hasFood
+  };
 };

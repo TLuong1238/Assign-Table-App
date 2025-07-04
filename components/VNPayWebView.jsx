@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Modal, 
-  StyleSheet, 
-  Alert, 
-  Text, 
-  TouchableOpacity, 
-  BackHandler 
+import {
+  View,
+  Modal,
+  StyleSheet,
+  Alert,
+  Text,
+  TouchableOpacity,
+  BackHandler
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { theme } from '../constants/theme';
@@ -16,11 +16,11 @@ import MyLoading from './MyLoading';
 import { parseVNPayReturnUrl } from '../helper/vnpayHelper';
 import { parseHttpBinResponse } from '../constants/vnpayConfig';
 
-const VNPayWebView = ({ 
-  visible, 
-  onClose, 
-  vnpayUrl, 
-  onPaymentSuccess, 
+const VNPayWebView = ({
+  visible,
+  onClose,
+  vnpayUrl,
+  onPaymentSuccess,
   onPaymentFailure,
   orderInfo = '',
   amount = 0
@@ -31,7 +31,7 @@ const VNPayWebView = ({
   const [waitingForReturn, setWaitingForReturn] = useState(false);
   const [processingResult, setProcessingResult] = useState(false);
   const webViewRef = useRef(null);
-  
+
   // ✅ THÊM REF ĐỂ TRÁNH XỬ LÝ TRÙNG LẶP
   const processedUrlsRef = useRef(new Set());
   const isProcessingRef = useRef(false);
@@ -45,20 +45,20 @@ const VNPayWebView = ({
         webViewRef.current.goBack();
         return true;
       }
-      
+
       // Show confirmation before closing
       Alert.alert(
         'Xác nhận',
         'Bạn có chắc muốn hủy thanh toán?',
         [
           { text: 'Tiếp tục thanh toán', style: 'cancel' },
-          { 
-            text: 'Hủy thanh toán', 
+          {
+            text: 'Hủy thanh toán',
             style: 'destructive',
             onPress: () => {
-              onPaymentFailure({ 
+              onPaymentFailure({
                 error: 'user_cancelled',
-                message: 'Người dùng hủy thanh toán' 
+                message: 'Người dùng hủy thanh toán'
               });
             }
           }
@@ -68,7 +68,7 @@ const VNPayWebView = ({
     };
 
     BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-    
+
     return () => {
       BackHandler.removeEventListener('hardwareBackPress', handleBackPress);
     };
@@ -77,12 +77,12 @@ const VNPayWebView = ({
   // ✅ Handle navigation state changes - SỬA ĐỂ TRÁNH TRÙNG LẶP
   const handleNavigationStateChange = (navState) => {
     const { url, canGoBack: webCanGoBack, loading: webLoading } = navState;
-    
+
     setCurrentUrl(url);
     setCanGoBack(webCanGoBack);
-    
+
     console.log('🌐 WebView navigation:', { url, canGoBack: webCanGoBack });
-    
+
     // ✅ TRÁNH XỬ LÝ URL ĐÃ PROCESSED
     if (processedUrlsRef.current.has(url)) {
       console.log('🔄 URL already processed, skipping:', url.substring(0, 50) + '...');
@@ -94,23 +94,23 @@ const VNPayWebView = ({
       console.log('⚠️ Already processing, skipping navigation');
       return;
     }
-    
+
     // ✅ DETECT HTTPBIN.ORG RESPONSE
     if (url.includes('httpbin.org/get') && url.includes('vnp_ResponseCode')) {
       console.log('✅ Detected HTTPBin VNPay response:', url);
-      
+
       // ✅ MARK URL AS PROCESSED VÀ SET PROCESSING FLAG
       processedUrlsRef.current.add(url);
       isProcessingRef.current = true;
-      
+
       setWaitingForReturn(true);
       setProcessingResult(true);
-      
+
       // ✅ Parse URL parameters từ httpbin
       setTimeout(() => {
         processHttpBinResponse(url);
       }, 2000);
-      
+
       return;
     }
 
@@ -120,7 +120,7 @@ const VNPayWebView = ({
       // Không xử lý, chờ HTTPBin response
       return;
     }
-    
+
     // ✅ DETECT EXPO LINKING DEEP LINK PATTERN
     const returnPatterns = [
       'bunchaobama://vnpay-return',
@@ -128,19 +128,19 @@ const VNPayWebView = ({
       'payment-return',
       '/return'
     ];
-    
+
     const isReturnUrl = returnPatterns.some(pattern => url.includes(pattern));
-    
+
     if (isReturnUrl) {
       console.log('✅ Expo Linking - Detected return URL:', url);
       setWaitingForReturn(true);
-      
+
       // ✅ SMALL DELAY TO LET EXPO LINKING HANDLE THE URL
       setTimeout(() => {
         console.log('📱 Closing WebView - Expo Linking will handle the result');
         onClose(); // Close WebView, let Expo Linking handle the response
       }, 2000);
-      
+
       return;
     }
 
@@ -151,7 +151,7 @@ const VNPayWebView = ({
       'timeout'
     ];
 
-    const isErrorUrl = errorPatterns.some(pattern => 
+    const isErrorUrl = errorPatterns.some(pattern =>
       url.toLowerCase().includes(pattern.toLowerCase())
     );
 
@@ -166,27 +166,33 @@ const VNPayWebView = ({
   const processHttpBinResponse = async (url) => {
     try {
       console.log('🔄 Processing HTTPBin response:', url);
-      
+
       // ✅ DOUBLE CHECK ĐỂ TRÁNH TRÙNG LẶP
       if (processingResult) {
         console.log('🚫 Already processing result, aborting');
         return;
       }
-      
+
       // ✅ FETCH JSON DATA FROM HTTPBIN
       const response = await fetch(url);
       const httpBinData = await response.json();
-      
-      console.log('📊 HTTPBin data:', httpBinData);
-      
+
+      console.log('📊 HTTPBin full data:', httpBinData);
+
       // ✅ EXTRACT VNPAY PARAMS FROM ARGS
       const params = httpBinData.args;
-      if (!params || !params.vnp_ResponseCode) {
-        throw new Error('No VNPay response parameters found in HTTPBin data');
+      if (!params) {
+        throw new Error('No args found in HTTPBin data');
       }
-      
-      console.log('📊 VNPay params from HTTPBin:', params);
-      
+
+      console.log('📊 VNPay params from HTTPBin args:', params);
+
+      // ✅ VALIDATE RESPONSE CODE
+      if (!params.vnp_ResponseCode) {
+        console.error('❌ Available keys in args:', Object.keys(params));
+        throw new Error('No VNPay response code found in HTTPBin args');
+      }
+
       // ✅ DIRECT PARSE - KHÔNG QUA VALIDATION + THÊM FLAG
       const vnpayData = {
         isSuccess: params.vnp_ResponseCode === '00' && params.vnp_TransactionStatus === '00',
@@ -206,19 +212,20 @@ const VNPayWebView = ({
         _alreadyParsed: true,
         _source: 'httpbin'
       };
-      
+
       console.log('✅ Direct parsed VNPay data:', vnpayData);
-      
+
       // ✅ DIRECT CALL SUCCESS/FAILURE - CHỈ 1 LẦN
       setTimeout(() => {
         // ✅ RESET PROCESSING STATE
         setProcessingResult(false);
         isProcessingRef.current = false;
-        
+
         if (vnpayData.isSuccess) {
           console.log('✅ Calling onPaymentSuccess directly');
           Alert.alert(
             '✅ Thanh toán thành công!',
+            `Giao dịch đã được xử lý thành công!\n\n` +
             `Số tiền: ${vnpayData.amount.toLocaleString('vi-VN')} VND\n` +
             `Mã giao dịch: ${vnpayData.transactionNo}\n` +
             `Ngân hàng: ${vnpayData.bankCode}`,
@@ -263,15 +270,15 @@ const VNPayWebView = ({
           );
         }
       }, 1500);
-      
+
     } catch (error) {
       console.error('❌ Error processing HTTPBin response:', error);
-      
+
       // ✅ RESET STATE ON ERROR
       setProcessingResult(false);
       setWaitingForReturn(false);
       isProcessingRef.current = false;
-      
+
       Alert.alert(
         '❌ Lỗi xử lý',
         `Có lỗi xảy ra khi xử lý kết quả thanh toán:\n${error.message}`,
@@ -284,6 +291,7 @@ const VNPayWebView = ({
                 message: error.message,
                 _alreadyParsed: true
               });
+              onClose();
             }
           }
         ]
@@ -308,14 +316,14 @@ const VNPayWebView = ({
       '79': 'Nhập sai mật khẩu thanh toán quá số lần quy định',
       '99': 'Các lỗi khác'
     };
-    
+
     return messages[responseCode] || 'Không xác định';
   };
-  
+
   // ✅ Handle payment errors that don't trigger deep links
   const handlePaymentError = (url) => {
     let errorMessage = 'Giao dịch không thành công';
-    
+
     if (url.includes('cancel')) {
       errorMessage = 'Bạn đã hủy giao dịch';
     } else if (url.includes('timeout')) {
@@ -365,10 +373,10 @@ const VNPayWebView = ({
   const handleError = (syntheticEvent) => {
     const { nativeEvent } = syntheticEvent;
     console.error('❌ WebView error:', nativeEvent);
-    
+
     // ✅ RESET PROCESSING STATE ON ERROR
     isProcessingRef.current = false;
-    
+
     Alert.alert(
       'Lỗi kết nối',
       'Không thể tải trang thanh toán. Vui lòng kiểm tra kết nối internet và thử lại.',
@@ -408,9 +416,9 @@ const VNPayWebView = ({
       'Bạn có chắc muốn hủy thanh toán? Giao dịch sẽ không được hoàn thành.',
       [
         { text: 'Tiếp tục thanh toán', style: 'cancel' },
-        { 
+        {
           text: 'Hủy thanh toán',
-          style: 'destructive', 
+          style: 'destructive',
           onPress: () => {
             onPaymentFailure({
               error: 'user_cancelled',
@@ -487,7 +495,7 @@ const VNPayWebView = ({
               </Text>
             </View>
           )}
-          
+
           <WebView
             ref={webViewRef}
             source={{ uri: vnpayUrl }}
@@ -496,7 +504,7 @@ const VNPayWebView = ({
             onLoadEnd={handleLoadEnd}
             onError={handleError}
             style={[
-              styles.webView, 
+              styles.webView,
               (waitingForReturn || processingResult) && { opacity: 0.5 }
             ]}
             javaScriptEnabled={true}
@@ -522,7 +530,7 @@ const VNPayWebView = ({
               Giao dịch được bảo mật bởi VNPay
             </Text>
           </View>
-          
+
           {/* ✅ PROCESSING STATUS */}
           {processingResult && (
             <View style={styles.processingStatus}>
@@ -530,7 +538,7 @@ const VNPayWebView = ({
               <Text style={styles.processingStatusText}>Đang xử lý...</Text>
             </View>
           )}
-          
+
           {/* ✅ EXPO LINKING STATUS */}
           {waitingForReturn && !processingResult && (
             <View style={styles.linkingStatus}>
@@ -538,10 +546,10 @@ const VNPayWebView = ({
               <Text style={styles.linkingText}>Expo Linking</Text>
             </View>
           )}
-          
+
           {/* Back button when can go back */}
           {canGoBack && !waitingForReturn && !processingResult && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => webViewRef.current?.goBack()}
             >

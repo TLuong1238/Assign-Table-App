@@ -1,18 +1,19 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { Alert } from 'react-native';
+import { router } from 'expo-router';
 import { fetchTable } from '../services/tableService';
 import { fetchProduct } from '../services/productService';
 import { fetchCate } from '../services/cateServiec';
 import { createBill, createDetail, fetchBillByTimeRange, fetchDetailByBillIds } from '../services/billService';
 import { createCartDetail } from '../services/cartDetailService';
-import { calculateDepositAmount, formatCurrency } from '../constants/paymentConfig';
+import { calculateDepositAmount, formatCurrency, PAYMENT_CONFIG, TimeUtils } from '../constants/paymentConfig';
+import { supabase } from '../lib/supabase';
 import useVNPay from './useVNPay';
 
 const SEARCH_DEBOUNCE_DELAY = 300;
 const MAX_QUANTITY_PER_ITEM = 20;
 const PEOPLE_PER_TABLE = 6;
-// constant for auto-hide message
-const STATUS_MESSAGE_DURATION = 5000; // 5 seconds
+const STATUS_MESSAGE_DURATION = 5000;
 
 export const useAssignTable = (user) => {
   // State management
@@ -55,7 +56,6 @@ export const useAssignTable = (user) => {
 
   const [loading, setLoading] = useState(false);
   const searchTimeoutRef = useRef(null);
-  // ref for status message timeout
   const statusTimeoutRef = useRef(null);
 
   // ✅ VNPay hook
@@ -78,8 +78,28 @@ export const useAssignTable = (user) => {
     showPaymentModal: false,
     selectedPaymentMethod: null,
     depositAmount: 0,
-    totalAmount: 0
+    totalAmount: 0,
+    tableDeposit: PAYMENT_CONFIG.TABLE_DEPOSIT
   });
+
+  // ✅ CHECK VIP USER
+  const isVipUser = useMemo(() => user?.role === 'vip', [user?.role]);
+
+  // ✅ THÊM APPOINTMENT TIME MEMOIZED
+  const appointmentTime = useMemo(() => {
+    return new Date(
+      formState.date.getFullYear(),
+      formState.date.getMonth(),
+      formState.date.getDate(),
+      formState.time.getHours(),
+      formState.time.getMinutes()
+    );
+  }, [formState.date, formState.time]);
+
+  // ✅ KIỂM TRA PAYMENT REQUIREMENT THEO THỜI GIAN
+  const paymentRequirement = useMemo(() => {
+    return TimeUtils.getPaymentRequirement(appointmentTime, cart.cartPrice, isVipUser);
+  }, [appointmentTime, cart.cartPrice, isVipUser]);
 
   // function to show message and auto-hide
   const showStatusMessage = useCallback((message, duration = STATUS_MESSAGE_DURATION) => {
@@ -87,13 +107,11 @@ export const useAssignTable = (user) => {
       ...prev,
       statusMessage: message
     }));
-    
-    // Clear ofl timeout 
+
     if (statusTimeoutRef.current) {
       clearTimeout(statusTimeoutRef.current);
     }
-    
-    // Set new timeout
+
     statusTimeoutRef.current = setTimeout(() => {
       setTableState(prev => ({
         ...prev,
@@ -102,13 +120,12 @@ export const useAssignTable = (user) => {
     }, duration);
   }, []);
 
-  // hide message immediately
   const hideStatusMessage = useCallback(() => {
     setTableState(prev => ({
       ...prev,
       statusMessage: ''
     }));
-    
+
     if (statusTimeoutRef.current) {
       clearTimeout(statusTimeoutRef.current);
     }
@@ -132,19 +149,23 @@ export const useAssignTable = (user) => {
     [tableState.tables, tableState.chooseTable]
   );
 
-  // ✅ Calculate payment amounts
+  // ✅ SỬA calculatePaymentAmounts - THÊM LOGIC THỜI GIAN
   const calculatePaymentAmounts = useCallback(() => {
-    const totalAmount = cart.cartPrice;
-    const depositAmount = calculateDepositAmount(totalAmount);
-    
+    const totalAmount = cart.cartPrice || 0;
+    const hasFood = cart.details.length > 0;
+
+    // ✅ TÍNH DEPOSIT THEO THỜI GIAN
+    const depositAmount = calculateDepositAmount(totalAmount, hasFood, isVipUser, appointmentTime);
+
     setPaymentState(prev => ({
       ...prev,
       totalAmount,
-      depositAmount
+      depositAmount,
+      tableDeposit: hasFood ? 0 : PAYMENT_CONFIG.TABLE_DEPOSIT
     }));
-    
+
     return { totalAmount, depositAmount };
-  }, [cart.cartPrice]);
+  }, [cart.cartPrice, cart.details.length, isVipUser, appointmentTime]);
 
   // Data fetching functions
   const fetchProductsData = useCallback(async () => {
@@ -237,20 +258,18 @@ export const useAssignTable = (user) => {
 
     let filtered = [...products];
 
-    // Filter by category
     if (selectedCategory && selectedCategory !== 'all') {
-    if (selectedCategory === 'favorite') {
-      filtered = filtered.filter(product => product.isFavor === true);
-    } else {
-      filtered = filtered.filter(product => {
-        const productCateId = product.cateId;
-        const categoryId = selectedCategory;
-        return productCateId == categoryId;
-      });
+      if (selectedCategory === 'favorite') {
+        filtered = filtered.filter(product => product.isFavor === true);
+      } else {
+        filtered = filtered.filter(product => {
+          const productCateId = product.cateId;
+          const categoryId = selectedCategory;
+          return productCateId == categoryId;
+        });
+      }
     }
-  }
 
-    // Filter by search text
     if (searchQuery && searchQuery.trim() !== '') {
       const searchLower = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(product =>
@@ -425,15 +444,14 @@ export const useAssignTable = (user) => {
     const isSelected = tableState.chooseTable.includes(item.id);
 
     if (isSelected) {
-      // remove selected table
       setTableState(prev => ({
         ...prev,
         chooseTable: prev.chooseTable.filter(id => id !== item.id)
       }));
-      
+
       const newSelectedCount = tableState.chooseTable.length - 1;
       if (newSelectedCount === 0) {
-        hideStatusMessage(); // Hide message when no table is selected
+        hideStatusMessage();
       } else {
         showStatusMessage(`Đã chọn ${newSelectedCount}/${requiredTables} bàn`);
       }
@@ -441,21 +459,18 @@ export const useAssignTable = (user) => {
     }
 
     if (tableState.chooseTable.length < requiredTables) {
-      // Choose new table
       const newSelectedCount = tableState.chooseTable.length + 1;
       setTableState(prev => ({
         ...prev,
         chooseTable: [...prev.chooseTable, item.id]
       }));
-      
+
       showStatusMessage(`Đã chọn ${newSelectedCount}/${requiredTables} bàn`);
     } else {
-      // Already enough tables
       showStatusMessage(`Số người hiện tại chỉ được chọn tối đa ${requiredTables} bàn!`);
     }
   }, [tableState.chooseTable, requiredTables, showStatusMessage, hideStatusMessage]);
 
-  // Fix Auto select tables with auto-hide message
   const autoSelectTables = useCallback((missingTables) => {
     if (availableTables.length < missingTables) {
       Alert.alert("Lỗi", "Không đủ bàn trống để tự động chọn!");
@@ -479,16 +494,200 @@ export const useAssignTable = (user) => {
       ...prev,
       chooseTable: [...prev.chooseTable, ...selectedTables]
     }));
-    
-    // message and auto-hide
+
     const totalSelected = tableState.chooseTable.length + selectedTables.length;
     showStatusMessage(`Hệ thống đã tự động chọn thêm ${missingTables} bàn! Tổng: ${totalSelected}/${requiredTables} bàn`);
   }, [availableTables, tableState.chooseTable, tableState.tables, requiredTables, showStatusMessage]);
 
+  // ✅ TẠO VIP BILL
+  const createVipBill = useCallback(async () => {
+    try {
+      console.log('🌟 Creating VIP bill...');
+
+      const billData = {
+        userId: user.id,
+        name: formState.name,
+        phone: formState.phone,
+        time: appointmentTime.toISOString(),
+        num_people: formState.peopleCount,
+        note: formState.note || '',
+        price: cart.cartPrice || 0,
+        total_amount: cart.cartPrice || 0,
+        deposit_amount: 0,
+        payment_status: 'deposit_paid',
+        payment_method: 'vip',
+        state: 'in_order',
+        visit: 'on_process'
+      };
+
+      const billResult = await createBill(billData);
+      if (!billResult.success) {
+        throw new Error(billResult.msg);
+      }
+
+      const bill = billResult.data[0];
+      console.log('✅ VIP Bill created:', bill.id);
+
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payments')
+        .insert([{
+          orderid: `VIP_${Date.now()}`,
+          billid: bill.id,
+          userid: user.id,
+          amount: 1,
+          payment_type: 'deposit',
+          payment_method: 'vip',
+          status: 'completed',
+          bill_data: {
+            ...billData,
+            tableIds: tableState.chooseTable,
+            cartDetails: cart.details,
+            note: 'VIP - No payment required'
+          },
+          completed_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select('*')
+        .single();
+
+      if (paymentError) {
+        console.error('Create VIP payment record failed:', paymentError);
+        throw new Error('Failed to create VIP payment record');
+      }
+
+      const payment = paymentData;
+      console.log('✅ VIP payment record created:', payment.id);
+
+      const { error: updateBillError } = await supabase
+        .from('bills')
+        .update({
+          payment_id: payment.id.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bill.id);
+
+      if (updateBillError) {
+        console.error('Update bill with payment ID failed:', updateBillError);
+      } else {
+        console.log('✅ Bill updated with payment ID:', payment.id);
+      }
+
+      const detailResult = await createDetail(bill.id, tableState.chooseTable, formState.peopleCount);
+      if (!detailResult.success) {
+        console.error('Create detail bills failed:', detailResult.msg);
+      }
+
+      if (cart.details.length > 0) {
+        const cartResult = await createCartDetail(bill.id, cart.details);
+        if (!cartResult.success) {
+          console.error('Create cart details failed:', cartResult.msg);
+        }
+      }
+
+      const successMessage = cart.details.length > 0
+        ? `Đặt bàn VIP thành công! Đã chọn ${cart.details.length} món ăn.\n\nMã đơn: ${bill.id}\nMã thanh toán: ${payment.id}\n\nKhông cần thanh toán - Đặc quyền VIP!`
+        : `Đặt bàn VIP thành công! Đã đặt ${tableState.chooseTable.length} bàn.\n\nMã đơn: ${bill.id}\nMã thanh toán: ${payment.id}\n\nKhông cần thanh toán cọc - Đặc quyền VIP!`;
+
+      Alert.alert(
+        '🌟 Đặt bàn VIP thành công!',
+        successMessage,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              resetAllStates();
+              router.back();
+            }
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Create VIP bill error:', error);
+      Alert.alert('Lỗi', 'Không thể tạo đơn đặt bàn VIP: ' + error.message);
+    }
+  }, [user, formState, cart, tableState.chooseTable, appointmentTime]);
+
+  // ✅ TẠO BILL KHÔNG CẦN THANH TOÁN (> 24H)
+  const createNoPaymentBill = useCallback(async () => {
+    try {
+      console.log('⏰ Creating no payment required bill...');
+
+      const { totalAmount } = calculatePaymentAmounts();
+
+      const billData = {
+        userId: user.id,
+        name: formState.name,
+        phone: formState.phone,
+        time: appointmentTime.toISOString(),
+        num_people: formState.peopleCount,
+        note: formState.note || '',
+        price: totalAmount,
+        total_amount: totalAmount,
+        deposit_amount: 0,
+        payment_status: PAYMENT_CONFIG.BILL_PAYMENT_STATUS.NO_PAYMENT_REQUIRED,
+        payment_method: PAYMENT_CONFIG.PAYMENT_METHODS.NO_PAYMENT,
+        state: 'in_order',
+        visit: 'on_process'
+      };
+
+      const billResult = await createBill(billData);
+      if (!billResult.success) {
+        throw new Error(billResult.msg);
+      }
+
+      const bill = billResult.data[0];
+      console.log('✅ No payment bill created:', bill.id);
+
+      const detailResult = await createDetail(bill.id, tableState.chooseTable, formState.peopleCount);
+      if (!detailResult.success) {
+        console.error('Create detail bills failed:', detailResult.msg);
+        throw new Error('Không thể tạo chi tiết đơn hàng');
+      }
+
+      if (cart.details.length > 0) {
+        const cartResult = await createCartDetail(bill.id, cart.details);
+        if (!cartResult.success) {
+          console.error('Create cart details failed:', cartResult.msg);
+        }
+      }
+
+      const hoursUntil = TimeUtils.calculateHoursUntilAppointment(appointmentTime);
+      const successMessage = cart.details.length > 0
+        ? `Đặt bàn thành công! Đã chọn ${cart.details.length} món ăn với tổng tiền ${formatCurrency(totalAmount)}đ.\n\n` +
+          `Mã đơn: ${bill.id}\n\n` +
+          `⏰ Đặt trước ${Math.ceil(hoursUntil)} giờ - Không cần thanh toán cọc!\n\n` +
+          `Vui lòng đến đúng giờ hẹn để được phục vụ.`
+        : `Đặt bàn thành công! Đã đặt ${tableState.chooseTable.length} bàn.\n\n` +
+          `Mã đơn: ${bill.id}\n\n` +
+          `⏰ Đặt trước ${Math.ceil(hoursUntil)} giờ - Không cần thanh toán cọc!\n\n` +
+          `Vui lòng đến đúng giờ hẹn để được phục vụ.`;
+
+      Alert.alert(
+        '✅ Đặt bàn thành công!',
+        successMessage,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              resetAllStates();
+              router.back();
+            }
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Create no payment bill error:', error);
+      Alert.alert('Lỗi', 'Không thể tạo đơn đặt bàn: ' + error.message);
+    }
+  }, [user, formState, cart, tableState.chooseTable, appointmentTime, calculatePaymentAmounts, resetAllStates]);
+
   // ✅ Handle payment method selection
   const handlePaymentMethodSelect = useCallback(async (method) => {
     const { totalAmount, depositAmount } = calculatePaymentAmounts();
-    
+
     setPaymentState(prev => ({
       ...prev,
       selectedPaymentMethod: method,
@@ -498,7 +697,7 @@ export const useAssignTable = (user) => {
     if (method === 'deposit_vnpay') {
       await handleVNPayDepositPayment();
     } else if (method === 'full_vnpay') {
-      await handleVNPayFullPayment(); 
+      await handleVNPayFullPayment();
     } else if (method === 'counter') {
       await handleCounterPayment();
     }
@@ -513,12 +712,11 @@ export const useAssignTable = (user) => {
       }
 
       const { depositAmount } = calculatePaymentAmounts();
-      
-      // Create bill data for VNPay
+
       const billData = {
         name: formState.name,
         phone: formState.phone,
-        time: formState.time.toISOString(),
+        time: appointmentTime.toISOString(),
         peopleCount: formState.peopleCount,
         note: formState.note,
         price: cart.cartPrice,
@@ -529,16 +727,16 @@ export const useAssignTable = (user) => {
       console.log('Creating VNPay deposit payment with data:', billData);
 
       const result = await createDepositPayment(billData, user.id);
-      
+
       if (!result.success) {
         Alert.alert('Lỗi thanh toán', result.message);
       }
-      
+
     } catch (error) {
       console.error('VNPay deposit payment error:', error);
       Alert.alert('Lỗi', 'Không thể thực hiện thanh toán');
     }
-  }, [user, formState, cart, tableState.chooseTable, calculatePaymentAmounts, createDepositPayment]);
+  }, [user, formState, cart, tableState.chooseTable, calculatePaymentAmounts, createDepositPayment, appointmentTime]);
 
   // ✅ VNPay full payment
   const handleVNPayFullPayment = useCallback(async () => {
@@ -551,7 +749,7 @@ export const useAssignTable = (user) => {
       const billData = {
         name: formState.name,
         phone: formState.phone,
-        time: formState.time.toISOString(),
+        time: appointmentTime.toISOString(),
         peopleCount: formState.peopleCount,
         note: formState.note,
         price: cart.cartPrice,
@@ -562,91 +760,157 @@ export const useAssignTable = (user) => {
       console.log('Creating VNPay full payment with data:', billData);
 
       const result = await createFullPayment(billData, user.id);
-      
+
       if (!result.success) {
         Alert.alert('Lỗi thanh toán', result.message);
       }
-      
+
     } catch (error) {
       console.error('VNPay full payment error:', error);
       Alert.alert('Lỗi', 'Không thể thực hiện thanh toán');
     }
-  }, [user, formState, cart, tableState.chooseTable, createFullPayment]);
+  }, [user, formState, cart, tableState.chooseTable, createFullPayment, appointmentTime]);
 
-  // ✅ Counter payment (existing logic)
+  // ✅ COUNTER PAYMENT
   const handleCounterPayment = useCallback(async () => {
-    await processBookingWithPaymentMethod('counter');
-  }, []);
-
-  // ✅ Process booking with payment method
-  const processBookingWithPaymentMethod = useCallback(async (paymentMethod) => {
-    setLoading(true);
     try {
-      // Create bill
-      const bill = {
-        userId: user?.id,
-        num_people: formState.peopleCount,
-        note: formState.note || "",
-        phone: formState.phone,
+      console.log('🏪 Creating counter payment...');
+      
+      if (!user?.id) {
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập để đặt bàn');
+        return;
+      }
+
+      setLoading(true);
+
+      const { totalAmount, depositAmount } = calculatePaymentAmounts();
+      const hasFood = cart.details.length > 0;
+
+      const billData = {
+        userId: user.id,
         name: formState.name,
-        time: formState.time.toISOString(),
-        state: "in_order",
-        visit: "on_process",
-        price: cart.cartPrice,
-        payment_method: paymentMethod,
-        payment_status: paymentMethod === 'counter' ? 'counter_payment' : 'pending',
-        total_amount: cart.cartPrice,
-        deposit_amount: 0
+        phone: formState.phone,
+        time: appointmentTime.toISOString(),
+        num_people: formState.peopleCount,
+        note: formState.note || '',
+        price: totalAmount,
+        total_amount: totalAmount,
+        deposit_amount: depositAmount,
+        payment_status: PAYMENT_CONFIG.BILL_PAYMENT_STATUS.PENDING_COUNTER,
+        payment_method: 'counter',
+        state: 'in_order',
+        visit: 'on_process'
       };
 
-      const billRes = await createBill(bill);
-      if (!billRes.success) {
-        Alert.alert("Lỗi", billRes.msg || "Đặt bàn thất bại!");
-        return;
+      console.log('📋 Creating bill with data:', billData);
+
+      const billResult = await createBill(billData);
+      if (!billResult.success) {
+        throw new Error(billResult.msg || 'Không thể tạo đơn hàng');
       }
 
-      const billId = billRes.data[0].id;
+      const bill = billResult.data[0];
+      console.log('✅ Bill created:', bill.id);
 
-      // Create table details
-      const detailRes = await createDetail(billId, tableState.chooseTable, formState.peopleCount);
-      if (!detailRes.success) {
-        Alert.alert("Lỗi", detailRes.msg || "Tạo chi tiết bill thất bại!");
-        return;
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payments')
+        .insert([{
+          orderid: `COUNTER_${bill.id}_${Date.now()}`,
+          billid: bill.id,
+          userid: user.id,
+          amount: totalAmount,
+          payment_type: hasFood ? 'full' : 'deposit',
+          payment_method: 'counter',
+          status: 'pending',
+          bill_data: {
+            ...billData,
+            tableIds: tableState.chooseTable,
+            cartDetails: cart.details,
+            note: 'Counter payment - waiting for admin confirmation'
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select('*')
+        .single();
+
+      if (paymentError) {
+        console.error('Create payment record failed:', paymentError);
+        throw new Error('Không thể tạo thanh toán');
       }
 
-      // Create cart details if any
+      const payment = paymentData;
+      console.log('✅ Payment record created:', payment.id);
+
+      const { error: updateBillError } = await supabase
+        .from('bills')
+        .update({
+          payment_id: payment.id.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bill.id);
+
+      if (updateBillError) {
+        console.error('Update bill with payment ID failed:', updateBillError);
+      } else {
+        console.log('✅ Bill updated with payment ID:', payment.id);
+      }
+
+      const detailResult = await createDetail(bill.id, tableState.chooseTable, formState.peopleCount);
+      if (!detailResult.success) {
+        console.error('Create detail bills failed:', detailResult.msg);
+        throw new Error('Không thể tạo chi tiết đơn hàng');
+      }
+
       if (cart.details.length > 0) {
-        const cartDetailRes = await createCartDetail(billId, cart.details);
-        if (!cartDetailRes.success) {
-          Alert.alert("Cảnh báo", "Đặt bàn thành công nhưng có lỗi khi lưu món ăn: " + cartDetailRes.msg);
+        const cartResult = await createCartDetail(bill.id, cart.details);
+        if (!cartResult.success) {
+          console.error('Create cart details failed:', cartResult.msg);
         }
       }
 
-      Alert.alert("Thành công", 
-        `Đặt bàn thành công!${cart.details.length > 0 
-          ? ` Đã chọn ${cart.details.length} món ăn với tổng tiền ${cart.cartPrice.toLocaleString()}đ.`
-          : ''}`
+      const successMessage = hasFood
+        ? `Đặt bàn thành công! Đã chọn ${cart.details.length} món ăn với tổng tiền ${formatCurrency(totalAmount)}đ.\n\n` +
+          `Mã đơn: ${bill.id}\n` +
+          `Mã thanh toán: ${payment.id}\n\n` +
+          `⏳ Trạng thái: Chờ xác nhận thanh toán tại quầy\n\n` +
+          `Khi đến nhà hàng, vui lòng thông báo cho nhân viên để xác nhận thanh toán.`
+        : `Đặt bàn thành công! Cọc đặt bàn ${formatCurrency(depositAmount)}đ.\n\n` +
+          `Mã đơn: ${bill.id}\n` +
+          `Mã thanh toán: ${payment.id}\n\n` +
+          `⏳ Trạng thái: Chờ xác nhận thanh toán tại quầy\n\n` +
+          `Khi đến nhà hàng, vui lòng thông báo cho nhân viên để xác nhận thanh toán.`;
+
+      Alert.alert(
+        '✅ Đặt bàn thành công!',
+        successMessage,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              resetAllStates();
+              router.back();
+            }
+          }
+        ]
       );
 
-      // Reset states
-      resetAllStates();
-
-    } catch (err) {
-      console.error('Error in processBookingWithPaymentMethod:', err);
-      Alert.alert("Lỗi", "Có lỗi xảy ra khi đặt bàn!");
+    } catch (error) {
+      console.error('❌ Counter payment error:', error);
+      Alert.alert('Lỗi', error.message || 'Không thể thực hiện thanh toán tại quầy');
     } finally {
       setLoading(false);
     }
-  }, [user, formState, cart, tableState.chooseTable]);
+  }, [user, formState, cart, tableState.chooseTable, calculatePaymentAmounts, resetAllStates, appointmentTime]);
 
   // ✅ Reset all states
   const resetAllStates = useCallback(() => {
-    setTableState(prev => ({ 
-      ...prev, 
-      chooseTable: [], 
+    setTableState(prev => ({
+      ...prev,
+      chooseTable: [],
       statusMessage: ''
     }));
-    
+
     setFormState(prev => ({
       ...prev,
       name: user?.name || '',
@@ -654,14 +918,15 @@ export const useAssignTable = (user) => {
       note: '',
       peopleCount: 1
     }));
-    
+
     setPaymentState({
       showPaymentModal: false,
       selectedPaymentMethod: null,
       depositAmount: 0,
-      totalAmount: 0
+      totalAmount: 0,
+      tableDeposit: PAYMENT_CONFIG.TABLE_DEPOSIT
     });
-    
+
     clearCart();
     hideStatusMessage();
     resetPayment();
@@ -671,17 +936,17 @@ export const useAssignTable = (user) => {
   // ✅ Handle VNPay success
   const handleVNPaySuccess = useCallback(async (vnpayParams) => {
     console.log('VNPay success with params:', vnpayParams);
-    
+
     await handlePaymentSuccess(vnpayParams);
-    
-    // Show success and reset after delay
+
     setTimeout(() => {
-      Alert.alert('🎉 Đặt bàn thành công!', 
+      Alert.alert('🎉 Đặt bàn thành công!',
         'Thanh toán đã được xử lý thành công. Bạn sẽ nhận được xác nhận qua SMS.',
-        [{ 
-          text: 'OK', 
+        [{
+          text: 'OK',
           onPress: () => {
             resetAllStates();
+            router.back();
           }
         }]
       );
@@ -691,79 +956,100 @@ export const useAssignTable = (user) => {
   // ✅ Handle VNPay failure
   const handleVNPayFailure = useCallback(async (errorData) => {
     console.log('VNPay failure with data:', errorData);
-    
+
     await handlePaymentFailure(errorData);
-    
-    // Show retry options
-    Alert.alert('❌ Thanh toán thất bại', 
+
+    Alert.alert('❌ Thanh toán thất bại',
       'Bạn có muốn thử lại hoặc chọn phương thức thanh toán khác?',
       [
         { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Thử lại', 
-          onPress: () => setPaymentState(prev => ({ 
-            ...prev, 
-            showPaymentModal: true 
-          })) 
+        {
+          text: 'Thử lại',
+          onPress: () => setPaymentState(prev => ({
+            ...prev,
+            showPaymentModal: true
+          }))
         },
-        { 
-          text: 'Thanh toán tại quầy', 
-          onPress: handleCounterPayment 
+        {
+          text: 'Thanh toán tại quầy',
+          onPress: handleCounterPayment
         }
       ]
     );
   }, [handlePaymentFailure, handleCounterPayment]);
 
-  // ✅ Handle assign (updated to show payment modal)
+  // ✅ Handle assign - SỬA LOGIC THEO THỜI GIAN
   const handleAssign = useCallback(async () => {
-    // Validation
-    if (!formState.name?.trim()) {
-      Alert.alert("Lỗi", "Vui lòng nhập tên của bạn!");
-      return;
-    }
-    if (!formState.phone?.trim()) {
-      Alert.alert("Lỗi", "Vui lòng nhập số điện thoại!");
-      return;
-    }
-    const phoneRegex = /^(0\d{9,10})$/;
-    if (!phoneRegex.test(formState.phone.trim())) {
-      Alert.alert("Lỗi", "Số điện thoại không hợp lệ!");
-      return;
-    }
-    if (!formState.peopleCount || isNaN(formState.peopleCount) || formState.peopleCount <= 0) {
-      Alert.alert("Lỗi", "Vui lòng nhập số người hợp lệ!");
-      return;
-    }
+    try {
+      setLoading(true);
 
-    if (tableState.chooseTable.length < requiredTables) {
-      const missingTables = requiredTables - tableState.chooseTable.length;
-      Alert.alert(
-        "Thiếu bàn",
-        `Với ${formState.peopleCount} người, bạn cần ít nhất ${requiredTables} bàn. Hiện tại bạn mới chọn ${tableState.chooseTable.length} bàn.`,
-        [
-          { text: "Tự chọn thêm", style: "cancel" },
-          { text: "Hệ thống tự chọn", onPress: () => autoSelectTables(missingTables) },
-        ]
-      );
-      return;
-    }
+      // ✅ VALIDATION
+      if (!formState.name.trim() || !formState.phone.trim()) {
+        Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
+        return;
+      }
 
-    // ✅ If has cart items, show payment options
-    if (cart.cartPrice > 0) {
-      calculatePaymentAmounts();
-      setPaymentState(prev => ({ ...prev, showPaymentModal: true }));
-    } else {
-      // No cart items, proceed with counter payment directly
-      await handleCounterPayment();
+      const phoneRegex = /^(0\d{9,10})$/;
+      if (!phoneRegex.test(formState.phone.trim())) {
+        Alert.alert("Lỗi", "Số điện thoại không hợp lệ!");
+        return;
+      }
+
+      if (!formState.peopleCount || isNaN(formState.peopleCount) || formState.peopleCount <= 0) {
+        Alert.alert("Lỗi", "Vui lòng nhập số người hợp lệ!");
+        return;
+      }
+
+      if (tableState.chooseTable.length === 0) {
+        Alert.alert('Lỗi', 'Vui lòng chọn ít nhất 1 bàn');
+        return;
+      }
+
+      if (tableState.chooseTable.length < requiredTables) {
+        const missingTables = requiredTables - tableState.chooseTable.length;
+        Alert.alert(
+          "Thiếu bàn",
+          `Với ${formState.peopleCount} người, bạn cần ít nhất ${requiredTables} bàn. Hiện tại bạn mới chọn ${tableState.chooseTable.length} bàn.`,
+          [
+            { text: "Tự chọn thêm", style: "cancel" },
+            { text: "Hệ thống tự chọn", onPress: () => autoSelectTables(missingTables) },
+          ]
+        );
+        return;
+      }
+
+      console.log('User role check:', { userId: user?.id, role: user?.role, isVip: isVipUser });
+      console.log('Payment requirement:', paymentRequirement);
+
+      // ✅ XỬ LÝ THEO PAYMENT REQUIREMENT
+      if (isVipUser) {
+        console.log('🌟 VIP User - Creating bill directly');
+        await createVipBill();
+      } else if (!paymentRequirement.required) {
+        console.log('⏰ No payment required - Creating bill directly');
+        await createNoPaymentBill();
+      } else {
+        console.log('💰 Payment required - Showing payment options');
+        calculatePaymentAmounts();
+        setPaymentState(prev => ({ ...prev, showPaymentModal: true }));
+      }
+
+    } catch (error) {
+      console.error('HandleAssign error:', error);
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi đặt bàn');
+    } finally {
+      setLoading(false);
     }
   }, [
     formState,
     tableState.chooseTable,
     requiredTables,
-    cart,
+    isVipUser,
+    paymentRequirement,
     autoSelectTables,
     calculatePaymentAmounts,
-    handleCounterPayment
+    createVipBill,
+    createNoPaymentBill
   ]);
 
   // Cleanup timeouts when component unmount
@@ -785,7 +1071,7 @@ export const useAssignTable = (user) => {
     cart,
     loading,
     searchTimeoutRef,
-    
+
     // ✅ VNPay states
     showWebView,
     vnpayUrl,
@@ -793,19 +1079,26 @@ export const useAssignTable = (user) => {
     paymentResult,
     paymentState,
     vnpayLoading,
-    
+
+    // ✅ VIP state
+    isVipUser,
+
+    // ✅ THÊM PAYMENT REQUIREMENT VÀ APPOINTMENT TIME
+    paymentRequirement,
+    appointmentTime,
+
     // Derived values
     requiredTables,
     totalCartItems,
     availableTables,
-    
+
     // State setters
     setTableState,
     setFormState,
     setProductState,
     setModalState,
     setLoading,
-    
+
     // Functions
     fetchProductsData,
     refreshTableData,
@@ -826,16 +1119,20 @@ export const useAssignTable = (user) => {
     // Functions for status message
     showStatusMessage,
     hideStatusMessage,
-    cleanup, // Để cleanup timeouts 
-    
-    // ✅ VNPay functions
+    cleanup,
+
+    //VNPay functions
     handlePaymentMethodSelect,
     handleVNPaySuccess,
     handleVNPayFailure,
     closeWebView,
     setPaymentState,
-    
-    // ✅ Utility functions
+
+    //VIP functions
+    createVipBill,
+    createNoPaymentBill,
+
+    // Utility functions
     resetAllStates,
     calculatePaymentAmounts
   };

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, memo } from 'react';
+import React, { useEffect, useCallback, memo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,8 @@ import {
   Modal,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -19,9 +20,6 @@ import MyHeader from '../../components/MyHeader';
 import MyInput from '../../components/MyInput';
 import MyButton from '../../components/MyButton';
 import MyTableItem from '../../components/MyTableItem';
-
-// Local Components
-
 
 // Hooks & Utils
 import { theme } from '../../constants/theme';
@@ -40,7 +38,23 @@ import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
 import ProductItem from '../../components/ProductItem';
 //
 import VNPayWebView from '../../components/VNPayWebView';
-import { formatCurrency } from '../../constants/paymentConfig';
+import { formatCurrency, PAYMENT_CONFIG } from '../../constants/paymentConfig';
+
+// ✅ HELPER FUNCTION KIỂM TRA THỜI GIAN 10 PHÚT
+const checkCounterPaymentAvailable = (selectedDate, selectedTime) => {
+  const now = new Date();
+  const selectedDateTime = new Date(selectedDate);
+  selectedDateTime.setHours(selectedTime.getHours());
+  selectedDateTime.setMinutes(selectedTime.getMinutes());
+  const diffMinutes = (selectedDateTime.getTime() - now.getTime()) / (1000 * 60);
+
+  return {
+    available: diffMinutes < 10,
+    diffMinutes: Math.floor(diffMinutes),
+    selectedDateTime,
+    currentTime: now
+  };
+};
 
 // Constants
 const FLATLIST_CONFIG = {
@@ -53,6 +67,9 @@ const FLATLIST_CONFIG = {
 
 const AssignTableScr = () => {
   const { user } = useAuth();
+
+  // ✅ THÊM STATE CHO COUNTER PAYMENT AVAILABILITY
+  const [counterPaymentAvailable, setCounterPaymentAvailable] = useState(true);
 
   const {
     tableState, formState, productState, modalState, cart, loading,
@@ -72,6 +89,30 @@ const AssignTableScr = () => {
     closeWebView,
     setPaymentState
   } = useAssignTable(user);
+
+  // ✅ KIỂM TRA USER VIP
+  const isVipUser = user?.role === 'vip';
+
+  // ✅ EFFECT KIỂM TRA REAL-TIME COUNTER PAYMENT AVAILABILITY
+  useEffect(() => {
+    const checkAvailability = () => {
+      const check = checkCounterPaymentAvailable(formState.date, formState.time);
+      setCounterPaymentAvailable(check.available);
+    };
+
+    checkAvailability();
+
+    // ✅ CHECK MỖI 30 GIÂY
+    const interval = setInterval(checkAvailability, 30000);
+
+    return () => clearInterval(interval);
+  }, [formState.date, formState.time]);
+
+  // ✅ CHECK KHI THAY ĐỔI THỜI GIAN
+  useEffect(() => {
+    const check = checkCounterPaymentAvailable(formState.date, formState.time);
+    setCounterPaymentAvailable(check.available);
+  }, [formState.date, formState.time]);
 
   // Render functions
   const renderProductItem = useCallback(({ item }) => (
@@ -106,6 +147,13 @@ const AssignTableScr = () => {
     <ScreenWrapper bg="#FFBF00">
       <View style={styles.container}>
         <MyHeader title="Đặt bàn" showBackButton={true} />
+
+        {/* ✅ HIỂN THỊ VIP BADGE */}
+        {isVipUser && (
+          <View style={styles.vipBadge}>
+            <Text style={styles.vipBadgeText}>🌟 VIP - Tri ân khách hàng thân thiết</Text>
+          </View>
+        )}
 
         <View style={styles.formContainer}>
           {/* Form Section */}
@@ -262,13 +310,16 @@ const AssignTableScr = () => {
         {/* Submit Button */}
         <View style={styles.buttonContainer}>
           <MyButton
-            title={cart.cartPrice > 0
-              ? `Chọn thanh toán (${cart.cartPrice.toLocaleString()}đ)`
-              : "Đặt bàn"
+            title={
+              isVipUser 
+                ? "🌟 Đặt bàn VIP 🌟"
+                : cart.cartPrice > 0
+                  ? `Chọn thanh toán (${cart.cartPrice.toLocaleString()}đ)`
+                  : `Đặt bàn (Cọc ${formatCurrency(PAYMENT_CONFIG.TABLE_DEPOSIT)}đ)`
             }
             loading={loading || vnpayLoading}
             onPress={handleAssign}
-            style={styles.submitButton}
+            style={[styles.submitButton, isVipUser && styles.vipSubmitButton]}
           />
         </View>
 
@@ -415,6 +466,7 @@ const AssignTableScr = () => {
             )}
           </View>
         </Modal>
+        
         <Modal
           visible={paymentState.showPaymentModal}
           animationType="slide"
@@ -437,7 +489,7 @@ const AssignTableScr = () => {
                 <Text style={styles.summaryTitle}>📋 Tóm tắt đơn hàng</Text>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>👤 Khách hàng:</Text>
-                  <Text style={styles.summaryValue}>{formState.name}</Text>
+                  <Text style={styles.summaryValue}>{formState.name} {isVipUser && '🌟'}</Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>📞 Điện thoại:</Text>
@@ -455,93 +507,188 @@ const AssignTableScr = () => {
                   <Text style={styles.summaryLabel}>🍽️ Món ăn:</Text>
                   <Text style={styles.summaryValue}>{cart.details.length} món</Text>
                 </View>
-                <View style={[styles.summaryRow, styles.totalRow]}>
-                  <Text style={styles.summaryLabel}>💰 Tổng tiền:</Text>
-                  <Text style={styles.totalValue}>{formatCurrency(paymentState.totalAmount)}đ</Text>
+                
+                {/* ✅ HIỂN THỊ LOẠI CỌC THEO LOGIC MỚI */}
+                {cart.details.length > 0 ? (
+                  <>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>💰 Tiền món ăn:</Text>
+                      <Text style={styles.summaryValue}>{formatCurrency(cart.cartPrice)}đ</Text>
+                    </View>
+                    <View style={[styles.summaryRow, styles.totalRow]}>
+                      <Text style={styles.summaryLabel}>💎 Tổng tiền:</Text>
+                      <Text style={styles.totalValue}>{formatCurrency(paymentState.totalAmount)}đ</Text>
+                    </View>
+                  </>
+                ) : (
+                  <View style={[styles.summaryRow, styles.totalRow]}>
+                    <Text style={styles.summaryLabel}>🏠 Cọc đặt bàn:</Text>
+                    <Text style={styles.totalValue}>
+                      {isVipUser ? "Miễn phí (VIP 🌟)" : `${formatCurrency(PAYMENT_CONFIG.TABLE_DEPOSIT)}đ`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* ✅ PAYMENT OPTIONS CHỈ HIỂN THỊ CHO USER THƯỜNG */}
+              {!isVipUser && (
+                <View style={styles.paymentOptions}>
+                  <Text style={styles.optionsTitle}>Chọn phương thức thanh toán:</Text>
+
+                  {/* VNPay Deposit */}
+                  <TouchableOpacity
+                    style={styles.paymentOption}
+                    onPress={() => handlePaymentMethodSelect('deposit_vnpay')}
+                  >
+                    <View style={styles.optionLeft}>
+                      <View style={[styles.optionIcon, { backgroundColor: '#007AFF' }]}>
+                        <Text style={styles.optionIconText}>💳</Text>
+                      </View>
+                      <View style={styles.optionInfo}>
+                        <Text style={styles.optionTitle}>Cọc qua VNPay</Text>
+                        <Text style={styles.optionDesc}>
+                          Thanh toán cọc {formatCurrency(paymentState.depositAmount)}đ
+                        </Text>
+                        <Text style={styles.optionNote}>
+                          {cart.details.length > 0 
+                            ? `Còn lại ${formatCurrency(paymentState.totalAmount - paymentState.depositAmount)}đ thanh toán tại quầy - Tốt cho đặt bàn trước`
+                            : "Cọc đặt bàn trước - Phù hợp cho kế hoạch dài hạn"
+                          }
+                        </Text>
+                      </View>
+                    </View>
+                    <Icon.ChevronRight width={20} height={20} color="#666" />
+                  </TouchableOpacity>
+
+                  {/* VNPay Full - CHỈ HIỂN THỊ KHI CÓ MÓN ĂN */}
+                  {cart.details.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.paymentOption}
+                      onPress={() => handlePaymentMethodSelect('full_vnpay')}
+                    >
+                      <View style={styles.optionLeft}>
+                        <View style={[styles.optionIcon, { backgroundColor: '#FF6B6B' }]}>
+                          <Text style={styles.optionIconText}>💎</Text>
+                        </View>
+                        <View style={styles.optionInfo}>
+                          <Text style={styles.optionTitle}>Thanh toán đầy đủ</Text>
+                          <Text style={styles.optionDesc}>
+                            Thanh toán toàn bộ {formatCurrency(paymentState.totalAmount)}đ
+                          </Text>
+                          <Text style={styles.optionNote}>
+                            Không cần thanh toán thêm tại quầy - Phù hợp đặt bàn trước
+                          </Text>
+                        </View>
+                      </View>
+                      <Icon.ChevronRight width={20} height={20} color="#666" />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Counter Payment */}
+                  <TouchableOpacity
+                    style={[
+                      styles.paymentOption,
+                      !counterPaymentAvailable && styles.paymentOptionDisabled
+                    ]}
+                    onPress={() => {
+                      if (!counterPaymentAvailable) {
+                        const check = checkCounterPaymentAvailable(formState.date, formState.time);
+                        Alert.alert(
+                          '⚠️ Không thể chọn thanh toán tại quầy',
+                          `Thanh toán tại quầy chỉ được phép khi đặt bàn trong vòng 10 phút tới.\n\n` +
+                          `⏰ Thời gian hiện tại: ${check.currentTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}\n` +
+                          `📅 Thời gian hẹn: ${check.selectedDateTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}\n` +
+                          `⌛ Còn lại: ${check.diffMinutes} phút\n\n` +
+                          `💡 Thanh toán tại quầy chỉ dành cho đặt bàn gấp (< 10 phút). Hãy chọn VNPay cho đặt bàn trước.`,
+                          [{ text: 'Đã hiểu', style: 'default' }]
+                        );
+                        return;
+                      }
+
+                      handlePaymentMethodSelect('counter');
+                    }}
+                  >
+                    <View style={styles.optionLeft}>
+                      <View style={[styles.optionIcon, { backgroundColor: '#4ECDC4' }]}>
+                        <Text style={styles.optionIconText}>🏪</Text>
+                      </View>
+                      <View style={styles.optionInfo}>
+                        <Text style={[
+                          styles.optionTitle,
+                          !counterPaymentAvailable && styles.optionTitleDisabled
+                        ]}>
+                          Thanh toán tại quầy
+                          {!counterPaymentAvailable && ` (Không khả dụng)`}
+                        </Text>
+                        <Text style={[
+                          styles.optionDesc,
+                          !counterPaymentAvailable && styles.optionDescDisabled
+                        ]}>
+                          {counterPaymentAvailable
+                            ? cart.details.length > 0
+                              ? `Thanh toán ${formatCurrency(paymentState.totalAmount)}đ khi đến nhà hàng`
+                              : `Thanh toán cọc ${formatCurrency(PAYMENT_CONFIG.TABLE_DEPOSIT)}đ khi đến nhà hàng`
+                            : (() => {
+                              const check = checkCounterPaymentAvailable(formState.date, formState.time);
+                              return `Chỉ dành cho đặt bàn gấp (< 10 phút) - Còn ${check.diffMinutes} phút`;
+                            })()
+                          }
+                        </Text>
+                        <Text style={[
+                          styles.optionNote,
+                          !counterPaymentAvailable && styles.optionNoteDisabled
+                        ]}>
+                          {counterPaymentAvailable
+                            ? `⚡ Đặt bàn gấp - Thanh toán trực tiếp tại quầy`
+                            : `⚠️ Hãy chọn thời gian gần hơn (< 10 phút) hoặc thanh toán VNPay`
+                          }
+                        </Text>
+                      </View>
+                    </View>
+                    {counterPaymentAvailable
+                      ? <Icon.ChevronRight width={20} height={20} color="#666" />
+                      : <Icon.Lock width={20} height={20} color="#999" />
+                    }
+                  </TouchableOpacity>
                 </View>
-              </View>
+              )}
 
-              {/* Payment Options */}
-              <View style={styles.paymentOptions}>
-                <Text style={styles.optionsTitle}>Chọn phương thức thanh toán:</Text>
+              {/* ✅ VIP INFO SECTION */}
+              {isVipUser && (
+                <View style={styles.vipInfo}>
+                  <Text style={styles.vipInfoTitle}>🌟 Đặc quyền VIP</Text>
+                  <Text style={styles.vipInfoText}>
+                    • Miễn phí cọc đặt bàn{'\n'}
+                    • Ưu tiên phục vụ{'\n'}
+                    • Không cần thanh toán trước{'\n'}
+                    • Đặt bàn không giới hạn thời gian{'\n'}
+                    • Hỗ trợ VIP 24/7
+                  </Text>
+                </View>
+              )}
 
-                {/* VNPay Deposit */}
-                <TouchableOpacity
-                  style={styles.paymentOption}
-                  onPress={() => handlePaymentMethodSelect('deposit_vnpay')}
-                >
-                  <View style={styles.optionLeft}>
-                    <View style={[styles.optionIcon, { backgroundColor: '#007AFF' }]}>
-                      <Text style={styles.optionIconText}>💳</Text>
-                    </View>
-                    <View style={styles.optionInfo}>
-                      <Text style={styles.optionTitle}>Cọc qua VNPay</Text>
-                      <Text style={styles.optionDesc}>
-                        Thanh toán cọc {formatCurrency(paymentState.depositAmount)}đ
-                      </Text>
-                      <Text style={styles.optionNote}>
-                        Còn lại {formatCurrency(paymentState.totalAmount - paymentState.depositAmount)}đ thanh toán tại quầy
-                      </Text>
-                    </View>
-                  </View>
-                  <Icon.ChevronRight width={20} height={20} color="#666" />
-                </TouchableOpacity>
+              {/* VNPay Info - CHỈ HIỂN THỊ CHO USER THƯỜNG */}
+              {!isVipUser && (
+                <View style={styles.vnpayInfo}>
+                  <Text style={styles.vnpayInfoTitle}>🛡️ Thanh toán an toàn với VNPay</Text>
+                  <Text style={styles.vnpayInfoText}>
+                    • Hỗ trợ 50+ ngân hàng trong nước{'\n'}
+                    • Bảo mật SSL 256-bit{'\n'}
+                    • Hỗ trợ 24/7{'\n'}
+                  </Text>
+                </View>
+              )}
 
-                {/* VNPay Full */}
-                <TouchableOpacity
-                  style={styles.paymentOption}
-                  onPress={() => handlePaymentMethodSelect('full_vnpay')}
-                >
-                  <View style={styles.optionLeft}>
-                    <View style={[styles.optionIcon, { backgroundColor: '#FF6B6B' }]}>
-                      <Text style={styles.optionIconText}>💎</Text>
-                    </View>
-                    <View style={styles.optionInfo}>
-                      <Text style={styles.optionTitle}>Thanh toán đầy đủ</Text>
-                      <Text style={styles.optionDesc}>
-                        Thanh toán toàn bộ {formatCurrency(paymentState.totalAmount)}đ
-                      </Text>
-                      <Text style={styles.optionNote}>
-                        Không cần thanh toán thêm tại quầy
-                      </Text>
-                    </View>
-                  </View>
-                  <Icon.ChevronRight width={20} height={20} color="#666" />
-                </TouchableOpacity>
-
-                {/* Counter Payment */}
-                <TouchableOpacity
-                  style={styles.paymentOption}
-                  onPress={() => handlePaymentMethodSelect('counter')}
-                >
-                  <View style={styles.optionLeft}>
-                    <View style={[styles.optionIcon, { backgroundColor: '#4ECDC4' }]}>
-                      <Text style={styles.optionIconText}>🏪</Text>
-                    </View>
-                    <View style={styles.optionInfo}>
-                      <Text style={styles.optionTitle}>Thanh toán tại quầy</Text>
-                      <Text style={styles.optionDesc}>
-                        Thanh toán {formatCurrency(paymentState.totalAmount)}đ khi đến nhà hàng
-                      </Text>
-                      <Text style={styles.optionNote}>
-                        Tiền mặt hoặc chuyển khoản
-                      </Text>
-                    </View>
-                  </View>
-                  <Icon.ChevronRight width={20} height={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-
-              {/* VNPay Info */}
-              <View style={styles.vnpayInfo}>
-                <Text style={styles.vnpayInfoTitle}>🛡️ Thanh toán an toàn với VNPay</Text>
-                <Text style={styles.vnpayInfoText}>
-                  • Hỗ trợ 50+ ngân hàng trong nước{'\n'}
-                  • Bảo mật SSL 256-bit{'\n'}
-                  • Xử lý tức thời, hoàn tiền tự động{'\n'}
-                  • Hỗ trợ 24/7
-                </Text>
-              </View>
+              {/* Counter Payment Info - CHỈ HIỂN THỊ CHO USER THƯỜNG */}
+              {!isVipUser && (
+                <View style={styles.counterInfo}>
+                  <Text style={styles.counterInfoTitle}>⚡ Thanh toán tại quầy</Text>
+                  <Text style={styles.counterInfoText}>
+                    • Thanh toán trực tiếp khi đến nhà hàng{'\n'}
+                    • Cần xác nhận từ nhân viên{'\n'}
+                  </Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </Modal>
@@ -563,9 +710,30 @@ const AssignTableScr = () => {
 
 export default memo(AssignTableScr);
 
-// ===== STYLES - Simplified but complete =====
+// ===== STYLES - Complete with VIP styles =====
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: wp(4), paddingTop: hp(1), backgroundColor: 'transparent' },
+  
+  // ✅ VIP BADGE STYLES
+  vipBadge: {
+    backgroundColor: '#FFD700',
+    marginBottom: hp(1),
+    paddingVertical: hp(1),
+    paddingHorizontal: wp(4),
+    borderRadius: wp(3),
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  vipBadgeText: {
+    color: '#B8860B',
+    fontSize: wp(4),
+    fontWeight: 'bold',
+  },
+  
   formContainer: { flex: 1, backgroundColor: '#fff7bf', borderRadius: wp(3), marginBottom: hp(1), overflow: 'hidden' },
   formContent: { paddingHorizontal: wp(4), paddingVertical: hp(2), gap: hp(1.5) },
   titleText: { color: 'black', fontSize: wp(5), fontWeight: '600', textAlign: 'center', marginBottom: hp(1) },
@@ -622,6 +790,11 @@ const styles = StyleSheet.create({
   submitButton: {
     marginHorizontal: 0, backgroundColor: theme.colors.primary, borderRadius: wp(3), elevation: 3,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84
+  },
+  // ✅ VIP SUBMIT BUTTON STYLE
+  vipSubmitButton: {
+    backgroundColor: '#FFD700',
+    shadowColor: '#FFD700',
   },
 
   modalContainer: { flex: 1, backgroundColor: 'white' },
@@ -769,10 +942,7 @@ const styles = StyleSheet.create({
   emptyCart: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: hp(2), paddingHorizontal: wp(8), backgroundColor: '#fafbfc' },
   emptyCartText: { fontSize: wp(5.5), fontWeight: '600', color: theme.colors.dark },
   emptyCartSubText: { fontSize: wp(4), color: theme.colors.textLight, textAlign: 'center', lineHeight: wp(6) },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
+  
   paymentContent: {
     flex: 1,
     backgroundColor: '#f8f9fa',
@@ -837,6 +1007,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e9ecef',
   },
+  paymentOptionDisabled: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#d6d8db',
+    opacity: 0.6,
+  },
   optionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -861,17 +1036,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.dark,
   },
+  optionTitleDisabled: {
+    color: '#6c757d',
+  },
   optionDesc: {
     fontSize: wp(3.5),
     color: theme.colors.primary,
     fontWeight: '600',
     marginTop: hp(0.3),
   },
+  optionDescDisabled: {
+    color: '#6c757d',
+  },
   optionNote: {
     fontSize: wp(3),
     color: theme.colors.textLight,
     marginTop: hp(0.3),
   },
+  optionNoteDisabled: {
+    color: '#dc3545',
+    fontWeight: '600',
+  },
+  
+  // ✅ VIP INFO STYLES
+  vipInfo: {
+    backgroundColor: '#fff8e1',
+    margin: wp(4),
+    padding: wp(4),
+    borderRadius: wp(3),
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFD700',
+  },
+  vipInfoTitle: {
+    fontSize: wp(3.8),
+    fontWeight: 'bold',
+    color: '#B8860B',
+    marginBottom: hp(1),
+  },
+  vipInfoText: {
+    fontSize: wp(3.5),
+    color: '#2d3436',
+    lineHeight: hp(2.5),
+  },
+  
   vnpayInfo: {
     backgroundColor: '#e8f5e8',
     margin: wp(4),
@@ -887,6 +1094,25 @@ const styles = StyleSheet.create({
     marginBottom: hp(1),
   },
   vnpayInfoText: {
+    fontSize: wp(3.5),
+    color: '#2d3436',
+    lineHeight: hp(2.5),
+  },
+  counterInfo: {
+    backgroundColor: '#fff8e1',
+    margin: wp(4),
+    padding: wp(4),
+    borderRadius: wp(3),
+    borderLeftWidth: 4,
+    borderLeftColor: '#f39c12',
+  },
+  counterInfoTitle: {
+    fontSize: wp(3.8),
+    fontWeight: 'bold',
+    color: '#f39c12',
+    marginBottom: hp(1),
+  },
+  counterInfoText: {
     fontSize: wp(3.5),
     color: '#2d3436',
     lineHeight: hp(2.5),
