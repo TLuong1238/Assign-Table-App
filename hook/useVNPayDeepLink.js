@@ -13,7 +13,7 @@ export const useExpoVNPayLinking = () => {
     console.log('🔗 Expo Linking - VNPay URL received:', url);
 
     try {
-      if (!url || !url.includes('vnpay-return')) {
+      if (!url || (!url.includes('vnpay-return') && !url.includes('myapp://'))) {
         console.log('🔄 URL không phải VNPay return:', url);
         return;
       }
@@ -478,7 +478,7 @@ export const useExpoVNPayLinking = () => {
   // ✅ CHECK SCHEME SUPPORT VỚI XỬ LÝ LỖI
   const checkSchemeSupport = useCallback(async () => {
     try {
-      const testUrl = 'bunchaobama://test';
+      const testUrl = 'myapp://test';
       const supported = await Linking.canOpenURL(testUrl);
 
       console.log('🔍 Expo Scheme support check:', {

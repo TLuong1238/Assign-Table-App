@@ -8,7 +8,8 @@ import {
 } from '../helper/vnpayHelper';
 import { parseHttpBinResponse } from '../constants/vnpayConfig';
 import { PAYMENT_CONFIG } from '../constants/paymentConfig';
-import { createBillFromPayment } from './billService';
+import { createBill, createDetail } from './billService';
+import { createCartDetail } from './cartDetailService';
 
 // ✅ Tạo thanh toán VNPay - XÓA VIP VALIDATION
 export const createVNPayPayment = async (paymentData) => {

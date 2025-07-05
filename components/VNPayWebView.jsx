@@ -123,7 +123,7 @@ const VNPayWebView = ({
 
     // ✅ DETECT EXPO LINKING DEEP LINK PATTERN
     const returnPatterns = [
-      'bunchaobama://vnpay-return',
+      'myapp://vnpay-return',
       'vnpay-return',
       'payment-return',
       '/return'

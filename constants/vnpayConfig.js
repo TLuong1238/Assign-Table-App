@@ -10,7 +10,7 @@ export const VNPAY_CONFIG = {
       // ✅ LUÔN DÙNG HTTPBIN TRONG DEV
       return 'https://httpbin.org/get';
     } else {
-      return 'bunchaobama://vnpay-return';
+      return 'myapp://vnpay-return';
     }
   },
 

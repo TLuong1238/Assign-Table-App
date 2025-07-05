@@ -5,11 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "exp+bunchaobama",
+    "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "images": "./assets/images/splash.png",
+      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -18,12 +18,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "host.exp.exponent",
+      "bundleIdentifier": "com.tluong38.bunchaobama",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
-            "CFBundleURLName": "exp+bunchaobama",
-            "CFBundleURLSchemes": ["exp+bunchaobama"]
+            "CFBundleURLName": "myapp",
+            "CFBundleURLSchemes": [
+              "myapp"
+            ]
           }
         ]
       }
@@ -33,14 +35,14 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "host.exp.exponent",
+      "package": "com.tluong38.bunchaobama",
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
           "data": [
             {
-              "scheme": "exp+bunchaobama"
+              "scheme": "myapp"
             }
           ],
           "category": [

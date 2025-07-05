@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Alert, RefreshControl, StatusBar } from 'react-native';
-import React, { useEffect, useState, useCallback, memo } from 'react';
+import React, { useEffect, useState, useCallback, memo, useMemo } from 'react';
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import { theme } from '../../../constants/theme';
 import { hp, wp } from '../../../helper/common';
@@ -10,6 +10,11 @@ import VNPayWebView from '../../../components/VNPayWebView';
 import { createVNPayPayment, handleVNPayReturn } from '../../../services/vnpayService';
 import { useAuth } from '../../../context/AuthContext';
 
+import RefundModal from '../../../components/RefundModal';
+import { VNPayRefundService } from '../../../services/vnpayRefundService';
+
+
+import { updateTableState } from '../../../services/tableService';
 // ✅ PAYMENT STATUS CONSTANTS VÀ UTILITIES
 const PAYMENT_STATUS = {
   PENDING: 'pending',
@@ -19,9 +24,11 @@ const PAYMENT_STATUS = {
   PENDING_COUNTER: 'pending_counter'
 };
 
+// historyScr.jsx - SỬA PaymentUtils (dòng 50-100)
+// historyScr.jsx - SỬA PaymentUtils (KHÔNG dùng useMemo)
 const PaymentUtils = {
   getPaymentStatusInfo: (paymentStatus, depositAmount, totalAmount, price) => {
-    const currentTotal = totalAmount || price || 0;
+    const currentTotal = price || totalAmount || 0;
     const deposit = depositAmount || 0;
     const remaining = currentTotal - deposit;
 
@@ -35,7 +42,7 @@ const PaymentUtils = {
           amountText: `Cần thanh toán: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#ffeaea',
           borderColor: '#ffb3b3',
-          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
+          showTimeStatus: true
         };
 
       case PAYMENT_STATUS.DEPOSIT_PAID:
@@ -47,7 +54,7 @@ const PaymentUtils = {
           amountText: `Đã cọc: ${deposit.toLocaleString('vi-VN')}đ - Còn lại: ${remaining.toLocaleString('vi-VN')}đ`,
           bgColor: '#fff8e1',
           borderColor: '#ffe082',
-          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
+          showTimeStatus: true
         };
 
       case PAYMENT_STATUS.FULLY_PAID:
@@ -59,7 +66,7 @@ const PaymentUtils = {
           amountText: `Đã thanh toán: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#e8f5e8',
           borderColor: '#90ee90',
-          showTimeStatus: false // ✅ KHÔNG HIỂN THỊ THỜI GIAN
+          showTimeStatus: false
         };
 
       case PAYMENT_STATUS.COUNTER_PAYMENT:
@@ -71,7 +78,7 @@ const PaymentUtils = {
           amountText: `Thanh toán tại quầy: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#f3e5f5',
           borderColor: '#ce93d8',
-          showTimeStatus: false // ✅ KHÔNG HIỂN THỊ THỜI GIAN
+          showTimeStatus: false
         };
 
       default:
@@ -83,7 +90,7 @@ const PaymentUtils = {
           amountText: `Tổng tiền: ${currentTotal.toLocaleString('vi-VN')}đ`,
           bgColor: '#f5f5f5',
           borderColor: '#e0e0e0',
-          showTimeStatus: true // ✅ HIỂN THỊ THỜI GIAN
+          showTimeStatus: true
         };
     }
   },
@@ -177,25 +184,33 @@ const TimeUtils = {
   },
 
   // ✅ LOGIC HỦY ĐƠN - CHỈ 2 TRƯỜNG HỢP
-  calculateCancelInfo: (billTime, depositAmount) => {
+  calculateCancelInfo: (billTime, depositAmount, paymentMethod) => {
     const now = new Date();
     const billTimeDate = new Date(billTime);
     const diffHours = (billTimeDate.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     if (diffHours >= 24) {
+      // ✅ CHỈ HOÀN TIỀN KHI LÀ VNPAY
+      const refundMessage = paymentMethod === 'vnpay'
+        ? 'Hủy trước 24h - Hoàn 100% tiền'
+        : 'Hủy trước 24h - Liên hệ quầy để được hỗ trợ';
+
       return {
         canCancel: true,
-        message: 'Hủy trước 24h - Không mất gì'
+        message: refundMessage,
+        canRefund: paymentMethod === 'vnpay'
       };
     } else if (diffHours >= 2) {
       return {
         canCancel: true,
-        message: 'Hủy trong 24h - Sẽ mất tiền cọc'
+        message: 'Hủy trong 24h - Không được hoàn tiền',
+        canRefund: false
       };
     } else {
       return {
         canCancel: false,
-        message: 'Không thể hủy (còn < 2 tiếng)'
+        message: 'Không được hủy khi còn 2 tiếng nữa là đến thời gian đặt',
+        canRefund: false
       };
     }
   },
@@ -226,15 +241,22 @@ const TimeUtils = {
 };
 
 // ✅ PAYMENT INFO COMPONENT
-const PaymentInfoSection = memo(({ item }) => {
-  const paymentInfo = PaymentUtils.getPaymentStatusInfo(
-    item.payment_status,
-    item.deposit_amount,
-    item.total_amount,
-    item.price
-  );
 
-  const paymentMethodInfo = PaymentUtils.getPaymentMethodInfo(item.payment_method);
+// historyScr.jsx - SỬA PaymentInfoSection
+const PaymentInfoSection = memo(({ item }) => {
+  // ✅ MEMOIZE calculations với useMemo
+  const paymentInfo = useMemo(() => {
+    return PaymentUtils.getPaymentStatusInfo(
+      item.payment_status,
+      item.deposit_amount,
+      item.total_amount,
+      item.price
+    );
+  }, [item.payment_status, item.deposit_amount, item.total_amount, item.price]);
+
+  const paymentMethodInfo = useMemo(() => {
+    return PaymentUtils.getPaymentMethodInfo(item.payment_method);
+  }, [item.payment_method]);
 
   return (
     <View style={[styles.paymentSection, {
@@ -272,7 +294,7 @@ const PaymentInfoSection = memo(({ item }) => {
         </View>
       )}
 
-      {/* Payment ID nếu có */}
+      {/* Payment ID */}
       {item.payment_id && (
         <Text style={styles.paymentIdText}>
           Mã thanh toán: {item.payment_id}
@@ -283,12 +305,25 @@ const PaymentInfoSection = memo(({ item }) => {
 });
 
 // ✅ REMAINING PAYMENT COMPONENT
+// historyScr.jsx - SỬA RemainingPaymentSection
 const RemainingPaymentSection = memo(({ item, onPayRemaining }) => {
-  if (item.payment_status !== PAYMENT_STATUS.DEPOSIT_PAID) return null;
+  // ✅ CHỈ HIỂN THỊ KHI payment_status = 'deposit_paid'
+  if (item.payment_status !== PAYMENT_STATUS.DEPOSIT_PAID) {
+    return null;
+  }
 
-  const remaining = (item.total_amount || item.price || 0) - (item.deposit_amount || 0);
+  // ✅ SỬA: SỬ DỤNG price THAY VÌ total_amount
+  const actualTotal = item.price || item.total_amount || 0; // ✅ PRICE FIRST
+  const depositAmount = item.deposit_amount || 0;
+  const remaining = actualTotal - depositAmount;
 
-  if (remaining <= 0) return null;
+
+  // ✅ KHÔNG HIỂN THỊ NẾU KHÔNG CÓ TIỀN CÒN LẠI
+  if (remaining <= 0) {
+    return null;
+  }
+
+  console.log('✅ SHOWING REMAINING PAYMENT BUTTONS!');
 
   return (
     <View style={styles.remainingPaymentSection}>
@@ -306,15 +341,21 @@ const RemainingPaymentSection = memo(({ item, onPayRemaining }) => {
       <View style={styles.remainingPaymentActions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.payRemainingButton]}
-          onPress={() => onPayRemaining(item, remaining)}
+          onPress={() => {
+            console.log('🔘 VNPay button pressed for remaining:', remaining);
+            onPayRemaining(item, remaining, 'vnpay');
+          }}
         >
           <Icon.CreditCard width={16} height={16} color="white" />
-          <Text style={styles.actionButtonText}>Thanh toán còn lại</Text>
+          <Text style={styles.actionButtonText}>Thanh toán VNPay</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, styles.counterPayButton]}
-          onPress={() => onPayRemaining(item, remaining, 'counter')}
+          onPress={() => {
+            console.log('🔘 Counter button pressed for remaining:', remaining);
+            onPayRemaining(item, remaining, 'counter');
+          }}
         >
           <Icon.Home width={16} height={16} color="white" />
           <Text style={styles.actionButtonText}>Tại quầy</Text>
@@ -323,7 +364,6 @@ const RemainingPaymentSection = memo(({ item, onPayRemaining }) => {
     </View>
   );
 });
-
 // Components
 const BillInfoRow = memo(({ icon, text, iconColor = theme.colors.textLight, textStyle = {} }) => (
   <View style={styles.billInfoRow}>
@@ -351,13 +391,15 @@ const TablesSection = memo(({ details, getTableName }) => (
 ));
 
 // ✅ ActionButtons - SỬA LOGIC HIỂN THỊ NÚT "ĐÃ ĐẾN"
-const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived, paymentInfo }) => {
+// historyScr.jsx - SỬA ActionButtons component (dòng 420-500)
+// historyScr.jsx - SỬA ActionButtons để đảm bảo logic đúng
+const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived, paymentInfo, openRefundModal }) => {
   // ✅ KHÔNG HIỂN THỊ NẾU ĐÃ ĐẾN HOẶC ĐÃ HỦY
   if (item.visit === 'visited' || item.state === 'cancelled') {
     return null;
   }
 
-  // ✅ KHÔNG HIỂN THỊ NẾU QUÁ 15 PHÚT (SẼ TỰ ĐỘNG HỦY) - CHỈ KHI CHƯA THANH TOÁN ĐẦY ĐỦ
+  // ✅ KHÔNG HIỂN THỊ NẾU QUÁ 15 PHÚT (SẼ TỰ ĐỘNG HỦY)
   if (timeStatus.shouldAutoCancel && paymentInfo.showTimeStatus) {
     return (
       <View style={styles.autoCancelSection}>
@@ -369,24 +411,93 @@ const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived, paymentInfo
     );
   }
 
-  // ✅ KIỂM TRA THỜI GIAN CHO NÚT "ĐÃ ĐẾN"
   const arrivedInfo = TimeUtils.calculateArrivedInfo(item.time);
+
+  // ✅ LOGIC CHO NÚT HỦY/HOÀN TIỀN THÔNG MINH
+  const getCancelRefundButtonInfo = () => {
+    if (item.payment_status === PAYMENT_STATUS.COUNTER_PAYMENT) {
+      return null;
+    }
+
+    if (timeStatus.canCancel === false) {
+      return null;
+    }
+
+    if (!paymentInfo.showTimeStatus) {
+      return null;
+    }
+
+    const billTime = new Date(item.time);
+    const now = new Date();
+    const diffHours = (billTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    // ✅ ĐIỀU KIỆN HOÀN TIỀN: ≥24h + đã thanh toán + VNPay
+    const isPaid = (item.payment_status === 'deposit_paid' || item.payment_status === 'fully_paid');
+    const isVNPay = item.payment_method === 'vnpay';
+    const canRefund = isPaid && isVNPay && diffHours >= 24;
+
+    console.log('🔍 Cancel/Refund button logic:', {
+      billId: item.id,
+      diffHours: diffHours,
+      isPaid: isPaid,
+      isVNPay: isVNPay,
+      canRefund: canRefund,
+      paymentStatus: item.payment_status,
+      paymentMethod: item.payment_method
+    });
+
+    if (canRefund) {
+      return {
+        type: 'refund',
+        icon: 'RefreshCw',
+        text: 'Hủy & Hoàn tiền',
+        color: '#f39c12',
+        action: () => {
+          console.log('🔄 Opening refund modal for bill:', item.id);
+          openRefundModal(item);
+        }
+      };
+    } else if (diffHours >= 2) {
+      return {
+        type: 'cancel',
+        icon: 'X',
+        text: 'Hủy đơn',
+        color: '#e74c3c',
+        action: () => onCancel(item, timeStatus)
+      };
+    }
+
+    return null;
+  };
+
+  const cancelRefundButton = getCancelRefundButtonInfo();
 
   return (
     <View style={styles.actionButtons}>
-      {/* ✅ NÚT HỦY - CHỈ HIỂN THỊ NẾU ĐƯỢC PHÉP HỦY VÀ CHƯA THANH TOÁN ĐẦY ĐỦ */}
-      {(timeStatus.canCancel !== false) && paymentInfo.showTimeStatus && (
+      {/* ✅ NÚT HỦY/HOÀN TIỀN THÔNG MINH */}
+      {cancelRefundButton && cancelRefundButton.type === 'refund' && (
         <TouchableOpacity
-          style={[styles.actionButton, styles.cancelButton]}
-          onPress={() => onCancel(item, timeStatus)}
+          style={styles.simpleRefundButton}
+          onPress={cancelRefundButton.action}
+          activeOpacity={0.85}
         >
-          <Icon.X width={16} height={16} color="white" />
+          <Icon.RefreshCw width={16} height={16} color="#fff" />
+          <Text style={styles.simpleRefundButtonText}>Hoàn tiền</Text>
+        </TouchableOpacity>
+      )}
+      {cancelRefundButton && cancelRefundButton.type === 'cancel' && (
+        <TouchableOpacity
+          style={[styles.actionButton, styles.smartCancelButton]}
+          onPress={cancelRefundButton.action}
+          activeOpacity={0.85}
+        >
+          <Icon.X width={16} height={16} color="#fff" />
           <Text style={styles.actionButtonText}>Hủy đơn</Text>
         </TouchableOpacity>
       )}
 
-      {/* ✅ NÚT ĐÃ ĐẾN - CHỈ HIỂN THỊ TRONG 10 PHÚT TRƯỚC/SAU GIỜ HẸN */}
-      {arrivedInfo.canArrived && paymentInfo.showTimeStatus && (
+      {/* ✅ NÚT ĐÃ ĐẾN */}
+      {arrivedInfo.canArrived && (
         <TouchableOpacity
           style={[styles.actionButton, styles.arrivedButton]}
           onPress={() => onArrived(item)}
@@ -396,7 +507,7 @@ const ActionButtons = memo(({ item, timeStatus, onCancel, onArrived, paymentInfo
         </TouchableOpacity>
       )}
 
-      {/* ✅ HIỂN THỊ THÔNG BÁO KHI KHÔNG THỂ ĐẾN */}
+      {/* ✅ THÔNG BÁO KHI KHÔNG THỂ ĐẾN */}
       {!arrivedInfo.canArrived && !timeStatus.shouldAutoCancel && (
         <View style={styles.arrivedDisabledSection}>
           <Icon.Info width={18} height={18} color="#95a5a6" />
@@ -446,6 +557,133 @@ const HistoryScr = () => {
   const [vnpayWebViewVisible, setVnpayWebViewVisible] = useState(false);
   const [vnpayUrl, setVnpayUrl] = useState('');
   const [currentPaymentData, setCurrentPaymentData] = useState(null);
+  // 
+  const [refundModal, setRefundModal] = useState({
+    visible: false,
+    bill: null
+  });
+  // REFUND 
+  // historyScr.jsx - SỬA handleRefundSuccess
+  const handleRefundSuccess = useCallback(async (refundData) => {
+    try {
+      console.log('✅ Refund success:', refundData);
+
+      const billId = refundData.refund.bill_id;
+      console.log('🔄 Updating bill status after refund:', billId);
+
+      // ✅ TÌM BILL TRONG LOCAL STATE
+      const billToUpdate = bills.find(b => b.id === billId);
+      if (!billToUpdate) {
+        console.error('❌ Bill not found in local state:', billId);
+        await fetchBills(); // Fallback
+        return;
+      }
+
+      // ✅ CẬP NHẬT TRẠNG THÁI BÀN THÀNH empty
+      if (billToUpdate.details?.length > 0) {
+        console.log('🪑 Updating table status to empty after refund for bill:', billId);
+
+        for (const detail of billToUpdate.details) {
+          try {
+            const tableUpdateResult = await updateTableState(detail.tableId, 'empty');
+
+            if (tableUpdateResult.success) {
+              console.log(`✅ Table ${detail.tableId} updated to empty after refund`);
+            } else {
+              console.error(`❌ Failed to update table ${detail.tableId} after refund:`, tableUpdateResult.msg);
+            }
+          } catch (tableError) {
+            console.error(`❌ Error updating table ${detail.tableId} after refund:`, tableError);
+          }
+        }
+      }
+
+      // ✅ CẬP NHẬT LOCAL STATE
+      setBills(prev => prev.map(b =>
+        b.id === billId
+          ? {
+            ...b,
+            state: 'cancelled',
+            visit: 'un_visited',
+            refund_amount: refundData.refund.refund_amount,
+            refund_status: 'completed',
+            updated_at: new Date().toISOString()
+          }
+          : b
+      ));
+
+      console.log('✅ Bill status updated to cancelled in local state');
+
+      // ✅ HIỂN THỊ THÔNG BÁO THÀNH CÔNG
+      Alert.alert(
+        '✅ Hoàn tiền & Hủy đơn thành công!',
+        `Đơn hàng #${billId} đã được hủy và hoàn tiền thành công.\n\n` +
+        `💰 Số tiền hoàn: ${refundData.refund.refund_amount.toLocaleString('vi-VN')}đ\n` +
+        `🏦 Mã giao dịch: ${refundData.refund.refund_transaction_no}\n` +
+        `📱 Phương thức: VNPay Demo\n\n` +
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('❌ Error in handleRefundSuccess:', error);
+      Alert.alert('Cảnh báo', 'Hoàn tiền thành công nhưng có lỗi cập nhật trạng thái. Vui lòng refresh lại trang.');
+
+      // ✅ FALLBACK - REFRESH DATA
+      await fetchBills();
+    }
+  }, [bills, fetchBills]);
+
+  // historyScr.jsx - SỬA openRefundModal
+  const openRefundModal = useCallback((bill) => {
+    console.log('🔄 Opening refund modal for bill:', {
+      id: bill.id,
+      name: bill.name,
+      paymentStatus: bill.payment_status,
+      paymentMethod: bill.payment_method,
+      depositAmount: bill.deposit_amount,
+      totalAmount: bill.total_amount,
+      time: bill.time
+    });
+    if (!bill || !bill.id) return;
+
+    // ✅ VALIDATION TRƯỚC KHI MỞ MODAL
+    if (!bill.id) {
+      Alert.alert('Lỗi', 'Thông tin đơn hàng không hợp lệ');
+      return;
+    }
+
+    if (bill.payment_status !== 'deposit_paid' && bill.payment_status !== 'fully_paid') {
+      Alert.alert('Lỗi', 'Chỉ có thể hoàn tiền cho đơn hàng đã thanh toán');
+      return;
+    }
+
+    if (bill.payment_method !== 'vnpay') {
+      Alert.alert('Lỗi', 'Chỉ hỗ trợ hoàn tiền cho thanh toán VNPay');
+      return;
+    }
+
+    const billTime = new Date(bill.time);
+    const now = new Date();
+    const diffHours = (billTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    if (diffHours < 24) {
+      Alert.alert('Lỗi', 'Chỉ được hoàn tiền khi còn ít nhất 24 giờ đến thời gian đặt bàn');
+      return;
+    }
+
+    setRefundModal({
+      visible: true,
+      bill: bill
+    });
+  }, []);
+
+  const closeRefundModal = useCallback(() => {
+
+    setRefundModal({
+      visible: false,
+      bill: null
+    });
+  }, []);
 
   // Utility functions
   const getBillStatus = (state, visit) => {
@@ -501,6 +739,7 @@ const HistoryScr = () => {
   }, [bills]);
 
   // ✅ TỰ ĐỘNG HOÀN THÀNH SAU 40 PHÚT ĐÃ ĐẾN
+  // historyScr.jsx - SỬA autoCompleteVisitedBills
   const autoCompleteVisitedBills = useCallback(async () => {
     if (!bills.length) return;
 
@@ -520,7 +759,8 @@ const HistoryScr = () => {
 
     for (const bill of billsToComplete) {
       try {
-        const { error } = await supabase
+        // ✅ CẬP NHẬT BILL STATUS
+        const { error: billError } = await supabase
           .from('bills')
           .update({
             state: 'completed',
@@ -528,13 +768,35 @@ const HistoryScr = () => {
           })
           .eq('id', bill.id);
 
-        if (error) throw error;
+        if (billError) throw billError;
 
+        // ✅ THÊM: CẬP NHẬT TRẠNG THÁI BÀN THÀNH empty
+        if (bill.details?.length > 0) {
+          console.log('🪑 Auto-complete: Updating table status to empty for completed bill:', bill.id);
+
+          for (const detail of bill.details) {
+            try {
+              const tableUpdateResult = await updateTableState(detail.tableId, 'empty');
+
+              if (tableUpdateResult.success) {
+                console.log(`✅ Auto-complete: Table ${detail.tableId} updated to empty`);
+              } else {
+                console.error(`❌ Auto-complete: Failed to update table ${detail.tableId}:`, tableUpdateResult.msg);
+              }
+            } catch (tableError) {
+              console.error(`❌ Auto-complete: Error updating table ${detail.tableId}:`, tableError);
+            }
+          }
+        }
+
+        // ✅ UPDATE LOCAL STATE
         setBills(prev => prev.map(b =>
           b.id === bill.id
             ? { ...b, state: 'completed', updated_at: new Date().toISOString() }
             : b
         ));
+
+        console.log(`✅ Auto-completed bill ${bill.id} and freed tables`);
 
       } catch (error) {
         console.error('Error auto completing bill:', bill.id, error);
@@ -543,9 +805,35 @@ const HistoryScr = () => {
   }, [bills]);
 
   // ✅ XỬ LÝ HỦY ĐƠN - CHỈ UPDATE STATE/VISIT, KHÔNG CÓ REFUND
+  // historyScr.jsx - SỬA processBillCancellation
   const processBillCancellation = useCallback(async (bill, cancelReason = 'user_cancel', isAutoCancel = false) => {
     try {
-      // ✅ CẬP NHẬT BILL STATUS - CHỈ CẬP NHẬT STATE VÀ VISIT
+      console.log('🔄 Processing bill cancellation:', { billId: bill.id, cancelReason });
+
+      // ✅ KIỂM TRA ĐIỀU KIỆN HOÀN TIỀN
+      const shouldProcessRefund = await checkCancellationRefundEligibility(bill);
+
+      if (shouldProcessRefund.canRefund) {
+        // ✅ HIỂN THỊ MODAL XÁC NHẬN HOÀN TIỀN
+        const confirmed = await showCancellationRefundConfirm(bill, shouldProcessRefund);
+
+        if (confirmed) {
+          // ✅ XỬ LÝ HOÀN TIỀN TRƯỚC KHI HỦY
+          const refundResult = await processAutomaticRefund(bill, shouldProcessRefund);
+
+          if (!refundResult.success) {
+            Alert.alert('Lỗi', 'Không thể xử lý hoàn tiền: ' + refundResult.message);
+            return { success: false };
+          }
+
+          console.log('✅ Refund processed successfully');
+        } else {
+          // ✅ NGƯỜI DÙNG KHÔNG ĐỒNG Ý HOÀN TIỀN
+          return { success: false, cancelled: true };
+        }
+      }
+
+      // ✅ CẬP NHẬT BILL STATUS
       const updateData = {
         state: 'cancelled',
         visit: 'un_visited',
@@ -559,6 +847,25 @@ const HistoryScr = () => {
 
       if (billError) throw billError;
 
+      // ✅ THÊM: CẬP NHẬT TRẠNG THÁI BÀN THÀNH empty
+      if (bill.details?.length > 0) {
+        console.log('🪑 Updating table status to empty for cancelled bill:', bill.id);
+
+        for (const detail of bill.details) {
+          try {
+            const tableUpdateResult = await updateTableState(detail.tableId, 'empty');
+
+            if (tableUpdateResult.success) {
+              console.log(`✅ Table ${detail.tableId} updated to empty`);
+            } else {
+              console.error(`❌ Failed to update table ${detail.tableId}:`, tableUpdateResult.msg);
+            }
+          } catch (tableError) {
+            console.error(`❌ Error updating table ${detail.tableId}:`, tableError);
+          }
+        }
+      }
+
       // ✅ UPDATE LOCAL STATE
       setBills(prev => prev.map(b =>
         b.id === bill.id
@@ -566,8 +873,14 @@ const HistoryScr = () => {
           : b
       ));
 
+      // ✅ THÔNG BÁO
       if (!isAutoCancel) {
-        Alert.alert('Hủy đơn thành công', 'Đơn hàng đã được hủy');
+        const message = shouldProcessRefund.canRefund
+          ? 'Đơn hàng đã được hủy và hoàn tiền thành công'
+          : 'Đơn hàng đã được hủy thành công';
+        Alert.alert('Thành công', message);
+      } else {
+        console.log(`🔄 Auto-cancelled bill ${bill.id} and freed tables`);
       }
 
       return { success: true };
@@ -577,6 +890,103 @@ const HistoryScr = () => {
         Alert.alert('Lỗi', 'Không thể hủy đơn hàng');
       }
       return { success: false, error };
+    }
+  }, []);
+
+  // ✅ THÊM HELPER FUNCTIONS MỚI:
+  const checkCancellationRefundEligibility = useCallback(async (bill) => {
+    // ✅ KIỂM TRA CÓ THANH TOÁN ONLINE KHÔNG
+    if (bill.payment_status !== 'deposit_paid' && bill.payment_status !== 'fully_paid') {
+      return { canRefund: false, reason: 'Chưa thanh toán' };
+    }
+
+    // ✅ KIỂM TRA PHƯƠNG THỨC THANH TOÁN
+    if (bill.payment_method !== 'vnpay') {
+      return { canRefund: false, reason: 'Không phải thanh toán VNPay' };
+    }
+
+    // ✅ KIỂM TRA THỜI GIAN
+    const billTime = new Date(bill.time);
+    const now = new Date();
+    const diffHours = (billTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    if (diffHours < 2) {
+      return { canRefund: false, reason: 'Không được hủy khi còn ít hơn 2 giờ' };
+    }
+
+    if (diffHours < 24) {
+      return { canRefund: false, reason: 'Không được hoàn tiền khi còn ít hơn 24 giờ' };
+    }
+
+    // ✅ ĐỦ ĐIỀU KIỆN HOÀN TIỀN
+    const refundAmount = bill.payment_status === 'deposit_paid'
+      ? bill.deposit_amount
+      : bill.total_amount || bill.price;
+
+    return {
+      canRefund: true,
+      refundAmount: refundAmount,
+      refundRate: 1.0, // 100%
+      hoursLeft: diffHours
+    };
+  }, []);
+
+  const showCancellationRefundConfirm = useCallback(async (bill, refundInfo) => {
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Xác nhận hủy đơn và hoàn tiền',
+        `Bạn có chắc muốn hủy đơn hàng của ${bill.name}?\n\n` +
+        `⏰ Còn ${Math.ceil(refundInfo.hoursLeft)} giờ đến thời gian đặt\n` +
+        `💰 Sẽ hoàn ${refundInfo.refundAmount.toLocaleString('vi-VN')}đ (100%)\n` +
+        `🏦 Phương thức: VNPay Demo\n\n` +
+        `Tiền sẽ được hoàn về tài khoản thanh toán trong 1-3 ngày làm việc.`,
+        [
+          {
+            text: 'Không hủy',
+            style: 'cancel',
+            onPress: () => resolve(false)
+          },
+          {
+            text: 'Hủy & Hoàn tiền',
+            style: 'destructive',
+            onPress: () => resolve(true)
+          }
+        ]
+      );
+    });
+  }, []);
+
+  const processAutomaticRefund = useCallback(async (bill, refundInfo) => {
+    try {
+      console.log('🔄 Processing automatic refund for cancellation:', {
+        billId: bill.id,
+        refundAmount: refundInfo.refundAmount
+      });
+
+      // ✅ IMPORT VNPayRefundService
+
+      const refundData = {
+        billId: bill.id,
+        originalAmount: bill.total_amount || bill.price,
+        refundAmount: refundInfo.refundAmount,
+        refundReason: 'Khách hàng hủy đơn trước 24h',
+        userId: bill.userId,
+        transactionNo: bill.payment_id
+      };
+
+      const result = await VNPayRefundService.simulateRefund(refundData);
+
+      if (result.success) {
+        console.log('✅ Automatic refund successful:', result.data);
+        return { success: true, data: result.data };
+      } else {
+        console.error('❌ Automatic refund failed:', result.message);
+        return { success: false, message: result.message };
+      }
+
+    } catch (error) {
+      console.error('❌ Error in automatic refund:', error);
+      return { success: false, message: error.message };
     }
   }, []);
 
@@ -660,39 +1070,57 @@ const HistoryScr = () => {
 
   // Event handlers
   // ✅ HỦY ĐƠN - CHỈ 2 TRƯỜNG HỢP
-  const handleCancelBill = useCallback((bill, timeStatus) => {
-    // ✅ KHÔNG CHO HỦY NẾU ĐÃ THANH TOÁN ĐẦY ĐỦ
-    if (bill.payment_status === PAYMENT_STATUS.FULLY_PAID ||
-      bill.payment_status === PAYMENT_STATUS.COUNTER_PAYMENT) {
+  // historyScr.jsx - SỬA handleCancelBill
+  const handleCancelBill = useCallback(async (bill, timeStatus) => {
+    try {
+      // ✅ KHÔNG CHO HỦY NẾU ĐÃ THANH TOÁN TẠI QUẦY
+      if (bill.payment_status === PAYMENT_STATUS.COUNTER_PAYMENT) {
+        Alert.alert(
+          'Không thể hủy đơn',
+          'Đơn hàng đã được thanh toán tại quầy, vui lòng liên hệ nhân viên để được hỗ trợ.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const cancelInfo = TimeUtils.calculateCancelInfo(bill.time, bill.deposit_amount, bill.payment_method);
+
+      // ✅ CHỈ CHO PHÉP HỦY KHI CÒN > 2H
+      if (!cancelInfo.canCancel) {
+        Alert.alert(
+          'Không thể hủy đơn',
+          cancelInfo.message,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // ✅ HIỂN THỊ MODAL XÁC NHẬN
       Alert.alert(
-        'Không thể hủy đơn',
-        'Đơn hàng đã được thanh toán đầy đủ, không thể hủy.',
-        [{ text: 'OK' }]
+        'Xác nhận hủy đơn',
+        `Bạn có chắc muốn hủy đơn hàng của ${bill.name}?\n\n${cancelInfo.message}`,
+        [
+          { text: 'Không hủy', style: 'cancel' },
+          {
+            text: 'Hủy đơn',
+            style: 'destructive',
+            onPress: async () => {
+              // ✅ XỬ LÝ HỦY ĐƠN VÀ CẬP NHẬT BÀNG
+              await processBillCancellation(bill, 'user_cancel', false);
+            }
+          }
+        ]
       );
-      return;
+
+    } catch (error) {
+      console.error('❌ Error in handleCancelBill:', error);
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi hủy đơn');
     }
-
-    const cancelInfo = TimeUtils.calculateCancelInfo(bill.time, bill.deposit_amount);
-
-    let alertMessage = `Bạn có chắc muốn hủy đơn hàng của ${bill.name}?\n\n`;
-    alertMessage += cancelInfo.message;
-
-    Alert.alert(
-      'Xác nhận hủy đơn',
-      alertMessage,
-      [
-        { text: 'Không', style: 'cancel' },
-        {
-          text: 'Hủy đơn',
-          style: 'destructive',
-          onPress: () => processBillCancellation(bill, 'user_cancel', false)
-        }
-      ]
-    );
   }, [processBillCancellation]);
 
   // ✅ SỬA handleArrived - THÊM VALIDATION THỜI GIAN
-  const handleArrived = useCallback((bill) => {
+  // historyScr.jsx - SỬA handleArrived
+  const handleArrived = useCallback(async (bill) => {
     const arrivedInfo = TimeUtils.calculateArrivedInfo(bill.time);
 
     if (!arrivedInfo.canArrived) {
@@ -713,7 +1141,8 @@ const HistoryScr = () => {
           text: 'Đã đến',
           onPress: async () => {
             try {
-              const { error } = await supabase
+              // ✅ CẬP NHẬT BILL STATUS
+              const { error: billError } = await supabase
                 .from('bills')
                 .update({
                   visit: 'visited',
@@ -721,8 +1150,28 @@ const HistoryScr = () => {
                 })
                 .eq('id', bill.id);
 
-              if (error) throw error;
+              if (billError) throw billError;
 
+              // ✅ THÊM: CẬP NHẬT TRẠNG THÁI BÀN THÀNH occupied
+              if (bill.details?.length > 0) {
+                console.log('🪑 Updating table status to occupied for arrived customer:', bill.id);
+
+                for (const detail of bill.details) {
+                  try {
+                    const tableUpdateResult = await updateTableState(detail.tableId, 'occupied');
+
+                    if (tableUpdateResult.success) {
+                      console.log(`✅ Table ${detail.tableId} updated to occupied`);
+                    } else {
+                      console.error(`❌ Failed to update table ${detail.tableId}:`, tableUpdateResult.msg);
+                    }
+                  } catch (tableError) {
+                    console.error(`❌ Error updating table ${detail.tableId}:`, tableError);
+                  }
+                }
+              }
+
+              // ✅ UPDATE LOCAL STATE
               setBills(prev => prev.map(b =>
                 b.id === bill.id
                   ? { ...b, visit: 'visited', updated_at: new Date().toISOString() }
@@ -741,10 +1190,9 @@ const HistoryScr = () => {
   }, []);
 
   // ✅ THANH TOÁN CÒN LẠI
+  // historyScr.jsx - SỬA handlePayRemaining (dòng 850)
   const handlePayRemaining = useCallback(async (bill, remainingAmount, paymentMethod = 'vnpay') => {
     try {
-      console.log('💰 Processing remaining payment for bill:', bill.id);
-
       // ✅ VALIDATION TRƯỚC KHI THANH TOÁN
       if (!bill || !bill.id) {
         Alert.alert('Lỗi', 'Thông tin đơn hàng không hợp lệ');
@@ -757,24 +1205,18 @@ const HistoryScr = () => {
         return;
       }
 
-      // ✅ TÍNH TOÁN SỐ TIỀN CÒN LẠI
-      const totalAmount = bill.total_amount || bill.price || 0;
+      // ✅ SỬA: TÍNH TOÁN SỐ TIỀN CÒN LẠI DÙNG price
+      const actualTotal = bill.price || bill.total_amount || 0; // ✅ PRICE FIRST
       const depositAmount = bill.deposit_amount || 0;
-      const remainingAmount = totalAmount - depositAmount;
-
-      console.log('💰 Payment calculation:', {
-        totalAmount,
-        depositAmount,
-        remainingAmount
-      });
+      const calculatedRemaining = actualTotal - depositAmount;
 
       // ✅ VALIDATION SỐ TIỀN
-      if (remainingAmount <= 0) {
+      if (calculatedRemaining <= 0) {
         Alert.alert('Thông báo', 'Đơn hàng này đã được thanh toán đầy đủ');
         return;
       }
 
-      if (remainingAmount > 50000000) { // 50M limit
+      if (calculatedRemaining > 50000000) { // 50M limit
         Alert.alert('Lỗi', 'Số tiền thanh toán quá lớn');
         return;
       }
@@ -783,16 +1225,16 @@ const HistoryScr = () => {
       Alert.alert(
         'Xác nhận thanh toán',
         `Bạn có muốn thanh toán phần còn lại?\n\n` +
-        `Tổng tiền: ${totalAmount.toLocaleString('vi-VN')}đ\n` +
+        `Tổng tiền: ${actualTotal.toLocaleString('vi-VN')}đ\n` +
         `Đã cọc: ${depositAmount.toLocaleString('vi-VN')}đ\n` +
-        `Còn lại: ${remainingAmount.toLocaleString('vi-VN')}đ\n\n` +
+        `Còn lại: ${calculatedRemaining.toLocaleString('vi-VN')}đ\n\n` +
         `Phương thức: ${paymentMethod === 'vnpay' ? 'VNPay' : 'Tại quầy'}`,
         [
           { text: 'Hủy', style: 'cancel' },
           {
             text: 'Thanh toán',
             onPress: async () => {
-              await processRemainingPayment(bill, remainingAmount, paymentMethod);
+              await processRemainingPayment(bill, calculatedRemaining, paymentMethod);
             }
           }
         ]
@@ -816,53 +1258,78 @@ const HistoryScr = () => {
       setLoading(true);
 
       if (paymentMethod === 'counter') {
-        // ✅ XỬ LÝ THANH TOÁN TẠI QUẦY
-
-        // 1. TÌM PAYMENT RECORD CỦA BILL
-        const { data: existingPayment, error: findError } = await supabase
+        // 1. Tìm payment cọc (nếu có)
+        const { data: depositPayment, error: findError } = await supabase
           .from('payments')
           .select('*')
           .eq('billid', bill.id)
           .eq('payment_type', 'deposit')
           .eq('status', 'completed')
-          .single();
+          .maybeSingle();
 
-        if (findError) {
-          console.error('❌ Cannot find existing payment:', findError);
-          throw new Error('Không tìm thấy thanh toán cọc ban đầu');
+        if (depositPayment) {
+          // Có payment cọc: cập nhật thành full
+          const { error: updatePaymentError } = await supabase
+            .from('payments')
+            .update({
+              payment_type: 'full',
+              amount: bill.total_amount || bill.price,
+              payment_method: 'counter',
+              updated_at: new Date().toISOString(),
+              bill_data: {
+                ...depositPayment.bill_data,
+                remainingAmount,
+                remainingPaymentMethod: 'counter',
+                remainingPaymentDate: new Date().toISOString()
+              }
+            })
+            .eq('id', depositPayment.id);
+
+          if (updatePaymentError) {
+            console.error('❌ Error updating payment:', updatePaymentError);
+            throw updatePaymentError;
+          }
+          console.log('✅ Payment updated to full payment');
+        } else {
+          const orderId = `COUNTER_${bill.id}_${Date.now()}`; // Tạo orderid duy nhất
+          // Không có payment cọc: tạo payment mới cho thanh toán tại quầy
+          const { error: createError } = await supabase
+            .from('payments')
+            .insert([{
+              orderid: orderId,
+              billid: bill.id,
+              userid: bill.userId,
+              amount: remainingAmount,
+              payment_type: 'counter',
+              payment_method: 'counter',
+              status: 'pending',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              bill_data: {
+                billId: bill.id,
+                name: bill.name,
+                phone: bill.phone,
+                num_people: bill.num_people,
+                time: bill.time,
+                note: bill.note,
+                totalAmount: bill.total_amount || bill.price,
+                remainingAmount,
+                remainingPaymentMethod: 'counter',
+                remainingPaymentDate: new Date().toISOString()
+              }
+            }]);
+          if (createError) {
+            console.error('❌ Error creating counter payment:', createError);
+            throw createError;
+          }
+          console.log('✅ Counter payment created');
         }
 
-        console.log('✅ Found existing payment:', existingPayment.id);
-
-        // 2. UPDATE PAYMENT RECORD - ĐỔI THÀNH FULL
-        const { error: updatePaymentError } = await supabase
-          .from('payments')
-          .update({
-            payment_type: 'full', // ✅ ĐỔI THÀNH FULL
-            amount: bill.total_amount || bill.price, // ✅ SỐ TIỀN FULL
-            payment_method: 'counter', // ✅ PHƯƠNG THỨC CUỐI CÙNG
-            updated_at: new Date().toISOString(),
-            bill_data: {
-              ...existingPayment.bill_data,
-              remainingAmount: remainingAmount,
-              remainingPaymentMethod: 'counter',
-              remainingPaymentDate: new Date().toISOString()
-            }
-          })
-          .eq('id', existingPayment.id);
-
-        if (updatePaymentError) {
-          console.error('❌ Error updating payment:', updatePaymentError);
-          throw updatePaymentError;
-        }
-
-        console.log('✅ Payment updated to full payment');
-
-        // 3. UPDATE BILL STATUS
+        // 2. Cập nhật trạng thái bill
         const { error: billError } = await supabase
           .from('bills')
           .update({
-            payment_status: 'fully_paid',
+            payment_status: 'pending_counter',
             payment_method: 'counter',
             updated_at: new Date().toISOString()
           })
@@ -873,27 +1340,26 @@ const HistoryScr = () => {
           throw billError;
         }
 
-        console.log('✅ Bill updated to fully_paid');
+        console.log('✅ Bill updated to pending_counter');
 
-        // 4. UPDATE LOCAL STATE
+        // 3. Cập nhật local state
         setBills(prev => prev.map(b =>
           b.id === bill.id
             ? {
               ...b,
-              payment_status: 'fully_paid',
+              payment_status: 'pending_counter',
               payment_method: 'counter',
               updated_at: new Date().toISOString()
             }
             : b
         ));
 
-        Alert.alert('✅ Thành công', 'Đã xác nhận thanh toán phần còn lại tại quầy');
+        Alert.alert('✅ Thành công', 'Đã gửi yêu cầu thanh toán tại quầy. Vui lòng chờ xác nhận từ nhân viên.');
 
       } else if (paymentMethod === 'vnpay') {
-        // ✅ XỬ LÝ THANH TOÁN VNPAY
-
-        // 1. TÌM PAYMENT RECORD CỦA BILL
-        const { data: existingPayment, error: findError } = await supabase
+        // ...giữ nguyên logic xử lý VNPay như cũ...
+        // 1. Tìm payment cọc (bắt buộc phải có)
+        const { data: depositPayment, error: findError } = await supabase
           .from('payments')
           .select('*')
           .eq('billid', bill.id)
@@ -906,15 +1372,15 @@ const HistoryScr = () => {
           throw new Error('Không tìm thấy thanh toán cọc ban đầu');
         }
 
-        console.log('✅ Found existing payment for VNPay update:', existingPayment.id);
+        console.log('✅ Found existing payment for VNPay update:', depositPayment.id);
 
-        // 2. TẠO PAYMENT DATA CHO VNPAY
+        // 2. Tạo payment data cho VNPay
         const paymentData = {
           userId: user.id,
           billId: bill.id,
           amount: remainingAmount,
           paymentType: 'remaining',
-          existingPaymentId: existingPayment.id, // ✅ THÊM ID CỦA PAYMENT CŨ
+          existingPaymentId: depositPayment.id,
           billData: {
             billId: bill.id,
             name: bill.name,
@@ -924,14 +1390,14 @@ const HistoryScr = () => {
             note: bill.note,
             totalAmount: bill.total_amount || bill.price,
             depositAmount: bill.deposit_amount,
-            remainingAmount: remainingAmount,
-            existingPaymentId: existingPayment.id // ✅ THÊM VÀO BILL DATA
+            remainingAmount,
+            existingPaymentId: depositPayment.id
           }
         };
 
         console.log('📋 VNPay payment data with existing payment:', paymentData);
 
-        // 3. TẠO VNPAY URL
+        // 3. Tạo VNPay URL
         const result = await createVNPayPayment(paymentData);
 
         if (result.success) {
@@ -939,7 +1405,7 @@ const HistoryScr = () => {
 
           setCurrentPaymentData({
             ...result.data,
-            existingPaymentId: existingPayment.id,
+            existingPaymentId: depositPayment.id,
             billId: bill.id
           });
           setVnpayUrl(result.data.vnpayUrl);
@@ -1124,16 +1590,11 @@ const HistoryScr = () => {
     }
   });
 
-  // ✅ renderBillItem - SỬA LOGIC HIỂN THỊ
+  // historyScr.jsx - SỬA renderBillItem
   const renderBillItem = useCallback(({ item, index }) => {
+    // ✅ TÍNH TOÁN TRỰC TIẾP - KHÔNG DÙNG HOOKS
     const billStatus = getBillStatus(item.state, item.visit);
     const timeStatus = TimeUtils.calculateTimeStatus(item.time);
-    const paymentInfo = PaymentUtils.getPaymentStatusInfo(
-      item.payment_status,
-      item.deposit_amount,
-      item.total_amount,
-      item.price
-    ); // ✅ LẤY PAYMENT INFO
 
     return (
       <View style={styles.billCard}>
@@ -1163,20 +1624,18 @@ const HistoryScr = () => {
             textStyle={styles.priceText}
           />
 
-          {/* ✅ CHỈ HIỂN THỊ THỜI GIAN KHI CẦN THIẾT */}
+          {/* Time Status */}
           {billStatus === BILL_STATUS.WAITING && (
             <BillInfoRow
               icon="Info"
-              text={paymentInfo.showTimeStatus ? timeStatus.text : 'Đã sẵn sàng phục vụ'}
-              iconColor={paymentInfo.showTimeStatus ? timeStatus.color : '#27ae60'}
+              text={timeStatus.text}
+              iconColor={timeStatus.color}
               textStyle={{
-                color: paymentInfo.showTimeStatus ? timeStatus.color : '#27ae60',
-                fontWeight: paymentInfo.showTimeStatus ? 'normal' : '600'
+                color: timeStatus.color,
+                fontWeight: 'normal'
               }}
             />
           )}
-
-
 
           {item.note && <BillInfoRow icon="FileText" text={item.note} />}
         </View>
@@ -1189,22 +1648,23 @@ const HistoryScr = () => {
           <TablesSection details={item.details} getTableName={getTableName} />
         )}
 
-        {/* ✅ CHỈ HIỂN THỊ REMAINING PAYMENT KHI CẦN THIẾT */}
-        {billStatus === BILL_STATUS.WAITING && paymentInfo.showTimeStatus && (
+        {/* ✅ REMAINING PAYMENT - CHỈ CHO WAITING BILLS */}
+        {billStatus === BILL_STATUS.WAITING && (
           <RemainingPaymentSection
             item={item}
             onPayRemaining={handlePayRemaining}
           />
         )}
 
-        {/* ✅ Actions - CHỈ CHO WAITING BILLS VÀ CÓ HIỂN THỊ THỜI GIAN */}
+        {/* Actions */}
         {billStatus === BILL_STATUS.WAITING && (
           <ActionButtons
             item={item}
             timeStatus={timeStatus}
-            paymentInfo={paymentInfo}
+            paymentInfo={{ showTimeStatus: true }}
             onCancel={handleCancelBill}
             onArrived={handleArrived}
+            openRefundModal={openRefundModal}
           />
         )}
 
@@ -1212,7 +1672,7 @@ const HistoryScr = () => {
         <StatusSection billStatus={billStatus} item={item} />
       </View>
     );
-  }, [bills.length, getTableName, handleCancelBill, handleArrived, handlePayRemaining]);
+  }, [bills.length, getTableName, handleCancelBill, handleArrived, handlePayRemaining, openRefundModal]);
 
   const renderTabButton = (key, label) => (
     <TouchableOpacity
@@ -1293,6 +1753,12 @@ const HistoryScr = () => {
         onPaymentFailure={handleVNPayFailure}
         orderInfo={currentPaymentData?.orderInfo || 'Thanh toán còn lại'}
         amount={currentPaymentData?.amount || 0}
+      />
+      <RefundModal
+        visible={refundModal.visible}
+        bill={refundModal.bill}
+        onClose={closeRefundModal}
+        onRefundSuccess={handleRefundSuccess}
       />
     </ScreenWrapper>
   );
@@ -1568,9 +2034,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
-  cancelButton: {
-    backgroundColor: '#e74c3c',
-  },
   arrivedButton: {
     backgroundColor: '#27ae60',
   },
@@ -1622,6 +2085,63 @@ const styles = StyleSheet.create({
     color: theme.colors.textLight,
     textAlign: 'center',
     marginTop: hp(1),
+  },
+  arrivedDisabledSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: wp(2),
+    marginTop: hp(1),
+    paddingHorizontal: wp(3),
+    paddingVertical: hp(0.8),
+    backgroundColor: '#f8f9fa',
+    borderRadius: 6,
+  },
+  arrivedDisabledText: {
+    fontSize: hp(1.3),
+    color: '#95a5a6',
+    fontStyle: 'italic',
+    flex: 1,
+  },
+  smartCancelRefundButton: {
+    backgroundColor: '#f39c12', // Màu cam cho hoàn tiền
+  },
+  smartCancelButton: {
+   flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'red',
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    minWidth: 110,
+    marginRight: 8,
+    shadowColor: '#f39c12',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  simpleRefundButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f39c12',
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    minWidth: 110,
+    marginRight: 8,
+    shadowColor: '#f39c12',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  simpleRefundButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+    marginLeft: 8,
   },
 });
 

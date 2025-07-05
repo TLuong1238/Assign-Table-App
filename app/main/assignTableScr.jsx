@@ -315,7 +315,7 @@ const AssignTableScr = () => {
                 ? "🌟 Đặt bàn VIP 🌟"
                 : cart.cartPrice > 0
                   ? `Chọn thanh toán (${cart.cartPrice.toLocaleString()}đ)`
-                  : `Đặt bàn (Cọc ${formatCurrency(PAYMENT_CONFIG.TABLE_DEPOSIT)}đ)`
+                  : `Đặt bàn`
             }
             loading={loading || vnpayLoading}
             onPress={handleAssign}
@@ -599,7 +599,7 @@ const AssignTableScr = () => {
                           `⏰ Thời gian hiện tại: ${check.currentTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}\n` +
                           `📅 Thời gian hẹn: ${check.selectedDateTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}\n` +
                           `⌛ Còn lại: ${check.diffMinutes} phút\n\n` +
-                          `💡 Thanh toán tại quầy chỉ dành cho đặt bàn gấp (< 10 phút). Hãy chọn VNPay cho đặt bàn trước.`,
+                          `💡 Thanh toán tại quầy chỉ dành cho đặt bàn tại quầy. Hãy chọn VNPay cho đặt bàn trước.`,
                           [{ text: 'Đã hiểu', style: 'default' }]
                         );
                         return;
@@ -624,7 +624,7 @@ const AssignTableScr = () => {
                           styles.optionDesc,
                           !counterPaymentAvailable && styles.optionDescDisabled
                         ]}>
-                          {counterPaymentAvailable
+                          {/* {counterPaymentAvailable
                             ? cart.details.length > 0
                               ? `Thanh toán ${formatCurrency(paymentState.totalAmount)}đ khi đến nhà hàng`
                               : `Thanh toán cọc ${formatCurrency(PAYMENT_CONFIG.TABLE_DEPOSIT)}đ khi đến nhà hàng`
@@ -632,15 +632,15 @@ const AssignTableScr = () => {
                               const check = checkCounterPaymentAvailable(formState.date, formState.time);
                               return `Chỉ dành cho đặt bàn gấp (< 10 phút) - Còn ${check.diffMinutes} phút`;
                             })()
-                          }
+                          } */}
                         </Text>
                         <Text style={[
                           styles.optionNote,
                           !counterPaymentAvailable && styles.optionNoteDisabled
                         ]}>
                           {counterPaymentAvailable
-                            ? `⚡ Đặt bàn gấp - Thanh toán trực tiếp tại quầy`
-                            : `⚠️ Hãy chọn thời gian gần hơn (< 10 phút) hoặc thanh toán VNPay`
+                            ? `⚡ Đặt bàn trực tiếp - Thanh toán trực tiếp tại quầy`
+                            : `⚠️ Hãy chọn thời gian phù hợp hoặc thanh toán VNPay`
                           }
                         </Text>
                       </View>
